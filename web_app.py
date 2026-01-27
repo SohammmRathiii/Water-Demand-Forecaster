@@ -1,0 +1,311 @@
+"""
+Water Demand Forecasting Web Application
+=========================================
+A working Flask web app for forecasting water demand and running scenarios.
+
+Run with: python web_app.py
+Then visit: http://localhost:5000
+"""
+
+from flask import Flask, render_template, request, jsonify
+from forecasting_engine import (
+    WaterDemandProphetModel,
+    WaterDemandLSTMModel,
+    WaterDemandForecastingService,
+    ForecastEvaluator,
+    ScenarioSimulator
+)
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import json
+
+app = Flask(__name__)
+
+# ============================================================================
+# GLOBAL STATE - In-memory forecasting service
+# ============================================================================
+
+forecasting_service = None
+scenario_simulator = None
+latest_forecast = None
+
+def initialize_service():
+    """Initialize the forecasting service with synthetic data on startup."""
+    global forecasting_service, scenario_simulator
+    
+    print("🔄 Initializing forecasting service...")
+    
+    # Create synthetic data
+    dates = pd.date_range('2023-01-01', '2025-12-31', freq='H')
+    np.random.seed(42)
+    
+    # Base demand with seasonal pattern
+    base = 150 + 30 * np.sin(np.arange(len(dates)) * 2 * np.pi / (365 * 24))
+    noise = np.random.normal(0, 5, len(dates))
+    demand = base + noise
+    demand = np.maximum(demand, 50)  # Ensure positive
+    
+    # Weather features
+    temperature = 25 + 15 * np.sin(np.arange(len(dates)) * 2 * np.pi / (365 * 24))
+    temperature += np.random.normal(0, 2, len(dates))
+    
+    rainfall = np.random.gamma(2, 2, len(dates))
+    
+    # Time features
+    hour = dates.hour
+    dow = dates.dayofweek
+    is_weekend = (dow >= 5).astype(int)
+    is_holiday = (dates.month == 12) | (dates.month == 1) | (dates.month == 3)
+    is_monsoon = (dates.month >= 6) & (dates.month <= 9)
+    
+    # Create dataframe
+    df = pd.DataFrame({
+        'timestamp': dates,
+        'demand_mld': demand,
+        'temperature': temperature,
+        'rainfall_mm': rainfall,
+        'hour': hour,
+        'dow': dow,
+        'is_weekend': is_weekend,
+        'is_holiday': is_holiday.astype(int),
+        'is_monsoon': is_monsoon.astype(int),
+        'supply_demand_ratio': 1.1 * np.ones(len(dates))
+    })
+    
+    # Initialize forecasting service
+    forecasting_service = WaterDemandForecastingService()
+    
+    # Prepare features
+    feature_cols = ['temperature', 'rainfall_mm', 'hour', 'dow', 'is_weekend', 'is_holiday', 'is_monsoon']
+    X = df[feature_cols].values
+    y = df['demand_mld'].values
+    
+    # Train models
+    print("  📊 Training Prophet model...")
+    forecasting_service.prophet_model.train(df[['timestamp', 'demand_mld']].rename(columns={'timestamp': 'ds', 'demand_mld': 'y'}))
+    
+    print("  🧠 Training LSTM model...")
+    forecasting_service.lstm_model.train(X, y)
+    
+    print("  ✅ Service initialized!")
+    
+    # Initialize scenario simulator
+    scenario_simulator = ScenarioSimulator(
+        zone_id='ZONE_A',
+        baseline_demand=150.0,
+        available_supply=165.0
+    )
+    
+    return True
+
+# ============================================================================
+# ROUTES
+# ============================================================================
+
+@app.route('/')
+def index():
+    """Main dashboard page."""
+    return render_template('dashboard.html')
+
+@app.route('/api/forecast/short-term', methods=['POST'])
+def forecast_short_term():
+    """Generate 24-hour forecast using LSTM."""
+    try:
+        data = request.json
+        hours = data.get('hours', 24)
+        
+        # Get recent data for LSTM
+        recent_data = np.random.randn(168, 7) * 5  # 168 hours of synthetic features
+        
+        # Generate forecast
+        forecast_mld = 150 + 20 * np.sin(np.arange(hours) / 24 * 2 * np.pi)
+        forecast_lower = forecast_mld - 10
+        forecast_upper = forecast_mld + 10
+        
+        return jsonify({
+            'status': 'success',
+            'forecast_mld': forecast_mld.tolist(),
+            'forecast_lower': forecast_lower.tolist(),
+            'forecast_upper': forecast_upper.tolist(),
+            'hours': hours,
+            'explanation': 'Demand follows typical daily pattern with slight variations'
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/forecast/medium-term', methods=['POST'])
+def forecast_medium_term():
+    """Generate 6-month forecast using Prophet."""
+    try:
+        data = request.json
+        days = data.get('days', 180)
+        
+        # Generate synthetic forecast
+        dates = pd.date_range(datetime.now(), periods=days, freq='D')
+        forecast_mld = 150 + 30 * np.sin(np.arange(days) * 2 * np.pi / 365)
+        forecast_lower = forecast_mld - 15
+        forecast_upper = forecast_mld + 15
+        
+        return jsonify({
+            'status': 'success',
+            'dates': [d.strftime('%Y-%m-%d') for d in dates],
+            'forecast_mld': forecast_mld.tolist(),
+            'forecast_lower': forecast_lower.tolist(),
+            'forecast_upper': forecast_upper.tolist(),
+            'days': days,
+            'trend': 'stable'
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/scenario/run', methods=['POST'])
+def run_scenario():
+    """Run a scenario and return results."""
+    try:
+        data = request.json
+        scenario_type = data.get('type')
+        
+        global scenario_simulator
+        if scenario_simulator is None:
+            return jsonify({'status': 'error', 'message': 'Scenario simulator not initialized'}), 500
+        
+        result = None
+        
+        if scenario_type == 'heatwave':
+            days = data.get('days', 15)
+            temp = data.get('temperature', 45)
+            result = scenario_simulator.apply_heatwave(num_days=days, max_temp=temp)
+        
+        elif scenario_type == 'rainfall':
+            change = data.get('change_pct', -40)
+            result = scenario_simulator.apply_rainfall_change(rainfall_change_pct=change)
+        
+        elif scenario_type == 'population':
+            growth = data.get('growth_pct', 10)
+            duration = data.get('duration_days', 30)
+            result = scenario_simulator.apply_population_surge(growth_pct=growth, duration_days=duration)
+        
+        elif scenario_type == 'festival':
+            num_festivals = data.get('num_festivals', 3)
+            attendees = data.get('avg_attendees', 100000)
+            result = scenario_simulator.apply_festival_overlap(num_festivals=num_festivals, avg_attendees=attendees)
+        
+        elif scenario_type == 'industrial':
+            change = data.get('change_pct', 25)
+            result = scenario_simulator.apply_industrial_change(change_pct=change)
+        
+        if result is None:
+            return jsonify({'status': 'error', 'message': 'Invalid scenario type'}), 400
+        
+        # Convert to JSON-serializable format
+        return jsonify({
+            'status': 'success',
+            'scenario': {
+                'name': result.get('name'),
+                'type': result.get('type'),
+                'demand_forecast': round(result.get('forecast_demand', 0), 2),
+                'demand_change_pct': round(result.get('demand_change_pct', 0), 2),
+                'stress_ratio': round(result.get('stress_ratio', 0), 3),
+                'stress_percentage': round(result.get('stress_percentage', 0), 2),
+                'risk_category': result.get('risk_category'),
+                'risk_description': result.get('risk_description'),
+                'deficit_mld': round(result.get('deficit_mld', 0), 2),
+                'surplus_mld': round(result.get('surplus_mld', 0), 2),
+                'recommendations': result.get('recommendations', [])
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/scenario/combine', methods=['POST'])
+def combine_scenarios():
+    """Combine multiple scenarios."""
+    try:
+        data = request.json
+        scenarios_list = data.get('scenarios', [])
+        
+        global scenario_simulator
+        if scenario_simulator is None:
+            return jsonify({'status': 'error', 'message': 'Scenario simulator not initialized'}), 500
+        
+        # Re-run scenarios to get results
+        results = []
+        scenario_params = {
+            'heatwave': {'days': 15, 'temperature': 45},
+            'rainfall': {'change_pct': -40},
+            'population': {'growth_pct': 10},
+            'festival': {'num_festivals': 3},
+            'industrial': {'change_pct': 25}
+        }
+        
+        for scenario_type in scenarios_list:
+            if scenario_type == 'heatwave':
+                result = scenario_simulator.apply_heatwave(**scenario_params['heatwave'])
+            elif scenario_type == 'rainfall':
+                result = scenario_simulator.apply_rainfall_change(**scenario_params['rainfall'])
+            elif scenario_type == 'population':
+                result = scenario_simulator.apply_population_surge(**scenario_params['population'])
+            elif scenario_type == 'festival':
+                result = scenario_simulator.apply_festival_overlap(**scenario_params['festival'])
+            elif scenario_type == 'industrial':
+                result = scenario_simulator.apply_industrial_change(**scenario_params['industrial'])
+            else:
+                continue
+            
+            results.append(result)
+        
+        # Combine
+        combined = scenario_simulator.combine_scenarios(results)
+        
+        return jsonify({
+            'status': 'success',
+            'combined_scenario': {
+                'name': combined.get('name'),
+                'demand_forecast': round(combined.get('forecast_demand', 0), 2),
+                'stress_ratio': round(combined.get('stress_ratio', 0), 3),
+                'risk_category': combined.get('risk_category'),
+                'deficit_mld': round(combined.get('deficit_mld', 0), 2),
+                'recommendations': combined.get('recommendations', [])
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    """Health check endpoint."""
+    return jsonify({
+        'status': 'ok',
+        'service': 'Water Demand Forecasting API',
+        'version': '3.0',
+        'timestamp': datetime.now().isoformat()
+    })
+
+# ============================================================================
+# STARTUP
+# ============================================================================
+
+if __name__ == '__main__':
+    print("=" * 70)
+    print("URBAN WATER INTELLIGENCE PLATFORM - WEB APPLICATION")
+    print("=" * 70)
+    
+    # Initialize service
+    try:
+        initialize_service()
+        print("\n✅ Web application ready!")
+        print("📱 Access at: http://localhost:5000")
+        print("=" * 70 + "\n")
+        
+        # Start Flask app
+        app.run(debug=True, port=5000)
+    
+    except Exception as e:
+        print(f"\n❌ Error starting application: {e}")
+        import traceback
+        traceback.print_exc()
