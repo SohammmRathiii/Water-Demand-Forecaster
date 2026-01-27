@@ -5,8 +5,6 @@ from typing import Dict, Tuple, List, Optional
 import pickle
 import json
 import logging
-
-# ML Libraries
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import LSTM, Dense, Dropout
@@ -14,72 +12,16 @@ from tensorflow.keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 
-# Statistical Forecasting
 from prophet import Prophet
 
-# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-#Soham Rathi
 
-
-# ============================================================================
-# 0. EXPLAINABILITY LAYER - FOR GOVERNMENT ADOPTION
-# ============================================================================
 
 class ForecastExplainer:
-    """
-    Explainability engine for water demand forecasts.
-    
-    WHY EXPLAINABILITY IS CRITICAL FOR PUBLIC-SECTOR ADOPTION:
-    ──────────────────────────────────────────────────────────
-    
-    1. ACCOUNTABILITY & TRANSPARENCY
-       → Government officials must explain rationing decisions to citizens
-       → "Model says there will be shortage" is NOT enough
-       → Must be able to say: "Due to X, Y, Z factors, we forecast shortage"
-    
-    2. DEBUGGING & TRUST
-       → When forecast is wrong, must understand WHY
-       → Without explanations, black-box models are rejected by regulators
-       → "LSTM says demand will be 600 MLD" doesn't build confidence
-       → "Temperature 40°C + 40,000 festival visitors → +200 MLD increase" makes sense
-    
-    3. STAKEHOLDER BUY-IN
-       → Water authority, environment ministry, city leadership
-       → Non-technical decision-makers need intuitive explanations
-       → SHAP values & feature importance are too technical for cabinet
-       → Plain English: "Weekend effect causes 15% higher demand" → accepted
-    
-    4. OPERATIONAL DECISIONS
-       → "Reduce supply by 50 MLD" requires clear justification
-       → Need to show: "Supply down because 2 reservoirs drying up (stored 150 MLD)"
-       → Operators must understand tradeoffs between different supply sources
-    
-    5. REGULATORY COMPLIANCE
-       → Government decisions affecting public must be explainable
-       → RTI (Right to Information) acts require transparency
-       → Must be able to provide detailed reasoning for any official action
-    
-    6. CONTINUOUS IMPROVEMENT
-       → Without explanations, can't improve model
-       → Must understand: "Monsoon predictions fail because rainfall data delayed"
-       → Then fix: "Add 12h buffer before monsoon alert"
-    
-    This class provides 3 levels of explanation:
-    - City level: Aggregate drivers (temperature, festivals, infrastructure)
-    - Zone level: Zone-specific patterns & anomalies
-    - Ward level: Granular demand changes with micro-factors
-    """
     
     def __init__(self, zone_id: str = None, region_type: str = 'zone'):
-        """
-        Initialize explainer.
-        
-        Args:
-            zone_id: Geographic zone (e.g., 'ZONE_A')
-            region_type: Aggregation level ('city', 'zone', 'ward')
-        """
+ 
         self.zone_id = zone_id
         self.region_type = region_type
         self.feature_impacts = {}
@@ -87,12 +29,7 @@ class ForecastExplainer:
         self.baseline_demand = None
         
     def analyze_prophet_components(self, prophet_model: 'WaterDemandProphetModel') -> Dict:
-        """
-        Extract interpretable components from Prophet model.
-        
-        Returns:
-            Dictionary with trend, seasonality, holiday impact
-        """
+
         if not prophet_model.is_trained:
             raise ValueError("Prophet model must be trained first")
         
@@ -107,7 +44,6 @@ class ForecastExplainer:
     
     @staticmethod
     def _extract_seasonality(prophet_model: 'WaterDemandProphetModel', period: str) -> float:
-        """Extract seasonality component magnitude."""
         try:
             forecast = prophet_model.model.make_future_dataframe(periods=365)
             components = prophet_model.model.predict(forecast)
@@ -131,24 +67,10 @@ class ForecastExplainer:
         recent_data: np.ndarray,
         feature_names: List[str]
     ) -> Dict[str, float]:
-        """
-        Calculate feature importance using gradient-based method.
-        
-        For LSTM, we compute sensitivity: how much does output change
-        when we slightly perturb each input feature?
-        
-        Args:
-            lstm_model: Trained LSTM model
-            recent_data: Recent data (lookback × features)
-            feature_names: Names of features
-            
-        Returns:
-            Dictionary with feature importance scores
-        """
+
         if not lstm_model.is_trained:
             raise ValueError("LSTM model must be trained first")
         
-        # Convert to tensor for gradient computation
         X_input = tf.convert_to_tensor(
             recent_data.reshape(1, lstm_model.lookback, lstm_model.feature_dim),
             dtype=tf.float32
@@ -156,27 +78,22 @@ class ForecastExplainer:
         
         importance_scores = {}
         
-        # For each feature, compute gradient w.r.t output
         for feature_idx in range(min(len(feature_names), lstm_model.feature_dim)):
             with tf.GradientTape() as tape:
                 X_input_var = tf.Variable(X_input)
                 tape.watch(X_input_var)
                 
-                # Forward pass
                 predictions = lstm_model.model(X_input_var)
                 loss = tf.reduce_mean(predictions)
-            
-            # Compute gradient
+
             gradients = tape.gradient(loss, X_input_var)
             
-            # Average gradient across time dimension
             feature_importance = tf.reduce_mean(
                 tf.abs(gradients[:, :, feature_idx])
             ).numpy()
             
             importance_scores[feature_names[feature_idx]] = float(feature_importance)
-        
-        # Normalize to percentage
+  
         total = sum(importance_scores.values())
         if total > 0:
             importance_scores = {k: (v/total)*100 for k, v in importance_scores.items()}
@@ -191,26 +108,11 @@ class ForecastExplainer:
         prophet_components: Dict = None,
         aggregation_level: str = 'zone'
     ) -> str:
-        """
-        Generate human-readable explanation for forecast change.
-        
-        Args:
-            forecast_value: Predicted demand (MLD)
-            baseline_value: Historical average demand (MLD)
-            feature_importance: Feature importance scores (%)
-            prophet_components: Prophet seasonality components
-            aggregation_level: 'city', 'zone', or 'ward'
-            
-        Returns:
-            Plain-English explanation suitable for government briefing
-        """
         change_mld = forecast_value - baseline_value
         change_pct = (change_mld / baseline_value * 100) if baseline_value > 0 else 0
         
-        # Build explanation
         explanation_parts = []
-        
-        # Opening statement
+  
         if change_mld > 0:
             explanation_parts.append(
                 f"Demand is forecast to INCREASE by {change_mld:.1f} MLD "
@@ -225,14 +127,12 @@ class ForecastExplainer:
         explanation_parts.append("")
         explanation_parts.append("KEY DRIVERS:")
         explanation_parts.append("─" * 50)
-        
-        # Top 3 features with impact
+ 
         top_features = dict(list(feature_importance.items())[:3])
         for feature, importance in top_features.items():
             impact = self._feature_to_impact_description(feature, importance)
             explanation_parts.append(f"• {impact}")
         
-        # Add seasonality if available
         if prophet_components:
             explanation_parts.append("")
             explanation_parts.append("SEASONAL PATTERNS:")
@@ -247,7 +147,6 @@ class ForecastExplainer:
                 weekly = prophet_components['weekly_seasonality']
                 explanation_parts.append(f"• Weekly pattern: Weekdays vs weekends ({abs(weekly):.0f} MLD effect)")
         
-        # Risk indicator
         if change_mld > 100:
             explanation_parts.append("")
             explanation_parts.append("⚠️  ALERT: Large increase detected")
@@ -258,7 +157,6 @@ class ForecastExplainer:
     
     @staticmethod
     def _feature_to_impact_description(feature: str, importance: float) -> str:
-        """Convert feature name to human-readable impact description."""
         feature_descriptions = {
             'temperature': f"Temperature effect causes {importance:.0f}% of change",
             'rainfall_mm': f"Rainfall patterns contribute {importance:.0f}% of variation",
@@ -289,26 +187,7 @@ class ForecastExplainer:
         ward_baseline: float = None,
         feature_importance: Dict[str, float] = None
     ) -> Dict[str, str]:
-        """
-        Generate explanations at city, zone, and ward levels.
-        
-        Useful for presenting to different stakeholders:
-        - City-level: Mayor & Commissioner (high-level strategy)
-        - Zone-level: Zone superintendents (operational planning)
-        - Ward-level: Local officials & residents (micro-actions)
-        
-        Args:
-            city_forecast: City-wide predicted demand
-            city_baseline: City-wide historical average
-            zone_forecast: Zone-specific forecast
-            zone_baseline: Zone-specific baseline
-            ward_forecast: Ward-level forecast (if available)
-            ward_baseline: Ward-level baseline
-            feature_importance: Features driving the change
-            
-        Returns:
-            Dictionary with explanations at 3 levels
-        """
+
         if feature_importance is None:
             feature_importance = {}
         
@@ -348,7 +227,7 @@ class ForecastExplainer:
         zone_forecast: float,
         zone_baseline: float
     ) -> str:
-        """Generate actionable recommendation based on forecast."""
+
         city_change = city_forecast - city_baseline
         zone_change = zone_forecast - zone_baseline
         
@@ -379,31 +258,9 @@ class ForecastExplainer:
         
         return "\n".join(recommendations)
 
-
-# ============================================================================
-# 1. BASELINE STATISTICAL MODEL - PROPHET
-# ============================================================================
-
 class WaterDemandProphetModel:
-    """
-    Prophet-based forecasting for medium-term (1-6 months) demand.
-    
-    Why Prophet for government use:
-    - Explainable: Decomposes into trend, seasonality, holidays
-    - Robust: Handles missing data & outliers automatically
-    - Interpretable: Shows impact of specific holidays/events
-    - Production-proven: Used by Facebook, industry standard
-    - No ML expertise required for maintenance
-    """
-    
     def __init__(self, zone_id: str, interval_width: float = 0.95):
-        """
-        Initialize Prophet model.
-        
-        Args:
-            zone_id: Geographic zone identifier (e.g., 'ZONE_A')
-            interval_width: Confidence interval (0.95 = 95% CI)
-        """
+
         self.zone_id = zone_id
         self.interval_width = interval_width
         self.model = None
@@ -412,73 +269,51 @@ class WaterDemandProphetModel:
         self.train_mape = None
         
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Prepare data for Prophet (requires 'ds' and 'y' columns).
-        
-        Args:
-            df: DataFrame with 'timestamp' and 'demand_mld' columns
-            
-        Returns:
-            DataFrame formatted for Prophet: ['ds', 'y', 'cap', 'floor']
-        """
+
         prophet_df = df.copy()
         prophet_df['ds'] = pd.to_datetime(prophet_df['timestamp'])
         prophet_df['y'] = prophet_df['demand_mld']
         
-        # Add capacity constraints (reasonable bounds)
-        prophet_df['cap'] = 2500  # Max realistic demand
-        prophet_df['floor'] = 100  # Min realistic demand
+        prophet_df['cap'] = 2500  
+        prophet_df['floor'] = 100  
         
         return prophet_df[['ds', 'y', 'cap', 'floor']]
     
     def train(self, df: pd.DataFrame, holdout_days: int = 30) -> Dict:
-        """
-        Train Prophet model with automatic seasonality detection.
-        
-        Args:
-            df: Historical demand data with 'timestamp', 'demand_mld'
-            holdout_days: Days to reserve for validation
-            
-        Returns:
-            Dictionary with training metrics (RMSE, MAPE)
-        """
+  
         logger.info(f"Training Prophet for {self.zone_id} ({len(df)} records)")
         
-        # Prepare data
+     
         prophet_df = self.prepare_data(df)
-        
-        # Split into train/val
+       
         split_date = prophet_df['ds'].max() - timedelta(days=holdout_days)
         train_df = prophet_df[prophet_df['ds'] <= split_date].copy()
         val_df = prophet_df[prophet_df['ds'] > split_date].copy()
         
-        # Initialize Prophet with sensible defaults
+
         self.model = Prophet(
             daily_seasonality=True,
             yearly_seasonality=True,
             weekly_seasonality=True,
             interval_width=self.interval_width,
-            changepoint_prior_scale=0.05,  # Conservative trend changes
-            seasonality_prior_scale=10.0,   # Strong seasonality
-            seasonality_mode='additive',    # Linear seasonality (good for water)
+            changepoint_prior_scale=0.05, 
+            seasonality_prior_scale=10.0,   
+            seasonality_mode='additive',   
             growth='linear'
         )
         
-        # Add Mumbai-specific holidays
         holidays_df = self._get_mumbai_holidays()
-        self.model.add_country_holidays('IN')  # Indian holidays
+        self.model.add_country_holidays('IN')  
         
-        # Train
+  
         self.model.fit(train_df)
-        
-        # Validation
+ 
         forecast_val = self.model.make_future_dataframe(
             periods=len(val_df),
             include_history=False
         )
         forecast_val = self.model.predict(forecast_val)
         
-        # Merge with actual values
         val_df_reset = val_df.reset_index(drop=True)
         forecast_val_reset = forecast_val.reset_index(drop=True)
         
@@ -505,15 +340,6 @@ class WaterDemandProphetModel:
         return metrics
     
     def forecast(self, periods: int = 180) -> pd.DataFrame:
-        """
-        Generate medium-term forecast (1-6 months).
-        
-        Args:
-            periods: Number of days to forecast (default: 180 = 6 months)
-            
-        Returns:
-            DataFrame with columns: ['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'trend']
-        """
         if not self.is_trained:
             raise ValueError("Model must be trained before forecasting")
         
@@ -522,10 +348,7 @@ class WaterDemandProphetModel:
         future = self.model.make_future_dataframe(periods=periods)
         forecast = self.model.predict(future)
         
-        # Extract last 'periods' rows
         forecast = forecast.tail(periods).copy()
-        
-        # Ensure non-negative forecasts
         forecast['yhat'] = forecast['yhat'].clip(lower=100)
         forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=100)
         forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=100)
@@ -533,18 +356,11 @@ class WaterDemandProphetModel:
         return forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'trend']]
     
     def get_components(self) -> Dict:
-        """
-        Extract interpretable components: trend, seasonal, holiday effects.
-        
-        Returns:
-            Dictionary with component breakdowns for explainability
-        """
         if not self.is_trained:
             raise ValueError("Model must be trained first")
         
         components = self.model.params
         
-        # Decompose example forecast
         future = self.model.make_future_dataframe(periods=7)
         forecast = self.model.predict(future)
         
@@ -555,13 +371,11 @@ class WaterDemandProphetModel:
         }
     
     def save(self, filepath: str):
-        """Serialize model to disk."""
         with open(filepath, 'wb') as f:
             pickle.dump(self.model, f)
         logger.info(f"Model saved to {filepath}")
     
     def load(self, filepath: str):
-        """Load model from disk."""
         with open(filepath, 'rb') as f:
             self.model = pickle.load(f)
         self.is_trained = True
@@ -569,7 +383,6 @@ class WaterDemandProphetModel:
     
     @staticmethod
     def _get_mumbai_holidays() -> pd.DataFrame:
-        """Mumbai-specific holidays for better seasonality."""
         holidays = pd.DataFrame({
             'holiday': [
                 'New Year', 'Republic Day', 'Holi', 'Diwali',
@@ -584,22 +397,7 @@ class WaterDemandProphetModel:
         })
         return holidays
 
-
-# ============================================================================
-# 2. ML-BASED MODEL - LSTM RNN
-# ============================================================================
-
 class WaterDemandLSTMModel:
-    """
-    LSTM-based forecasting for short-term (1-7 days) demand.
-    
-    Why LSTM for government use:
-    - Captures sequential patterns in water demand
-    - Learns time-dependencies automatically (no manual feature creation)
-    - Provides uncertainty estimates via quantile regression
-    - Fast inference (predictions in <1 second)
-    - Can be retrained daily without recompiling
-    """
     
     def __init__(
         self,
@@ -608,15 +406,7 @@ class WaterDemandLSTMModel:
         forecast_horizon: int = 24,  # Forecast 1 day ahead
         feature_dim: int = 12
     ):
-        """
-        Initialize LSTM model.
-        
-        Args:
-            zone_id: Geographic zone identifier
-            lookback: Historical hours to use (168 = 7 days)
-            forecast_horizon: Hours to forecast ahead (24 = 1 day)
-            feature_dim: Number of engineered features per timestep
-        """
+
         self.zone_id = zone_id
         self.lookback = lookback
         self.forecast_horizon = forecast_horizon
@@ -660,28 +450,16 @@ class WaterDemandLSTMModel:
         df: pd.DataFrame,
         feature_columns: List[str]
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Create sliding window sequences for LSTM training.
-        
-        Args:
-            df: DataFrame with engineered features
-            feature_columns: List of feature column names
-            
-        Returns:
-            (X, y) where X is (samples, lookback, features) and y is (samples, horizon)
-        """
+
         data = df[feature_columns].values
         
-        # Scale data to [0, 1]
         data_scaled = self.scaler.fit_transform(data)
         
         X, y = [], []
         
         for i in range(len(data_scaled) - self.lookback - self.forecast_horizon):
-            # Input: lookback hours
             X.append(data_scaled[i:i + self.lookback, :])
             
-            # Target: next forecast_horizon hours (demand only, first column)
             y.append(data_scaled[i + self.lookback:i + self.lookback + self.forecast_horizon, 0])
         
         return np.array(X), np.array(y)
@@ -694,19 +472,6 @@ class WaterDemandLSTMModel:
         batch_size: int = 32,
         validation_split: float = 0.2
     ) -> Dict:
-        """
-        Train LSTM model for short-term forecasting.
-        
-        Args:
-            df: Historical data with engineered features
-            feature_columns: Feature column names to use
-            epochs: Training epochs
-            batch_size: Batch size for training
-            validation_split: Train/val split ratio
-            
-        Returns:
-            Dictionary with training metrics
-        """
         logger.info(f"Training LSTM for {self.zone_id} ({len(df)} records)")
         
         # Prepare sequences
@@ -774,33 +539,20 @@ class WaterDemandLSTMModel:
         return self.train_metrics
     
     def forecast(self, recent_data: np.ndarray) -> Dict:
-        """
-        Generate short-term forecast with confidence intervals.
-        
-        Args:
-            recent_data: Last 'lookback' hours of data (shape: lookback × feature_dim)
-            
-        Returns:
-            Dictionary with forecast, lower CI, upper CI
-        """
+
         if not self.is_trained:
             raise ValueError("Model must be trained before forecasting")
         
-        # Reshape for model input
         X_input = recent_data.reshape(1, self.lookback, self.feature_dim)
         
-        # Point forecast
         y_pred = self.model.predict(X_input, verbose=0)[0]
         
-        # Inverse scale
         y_pred_unscaled = self.scaler.inverse_transform(
             np.hstack([y_pred.reshape(-1, 1), np.zeros((len(y_pred), self.feature_dim - 1))])
         )[:, 0]
         
-        # Confidence intervals (approximate via ±20% range)
-        # In production, use quantile regression or bootstrap for better estimates
-        y_lower = y_pred_unscaled * 0.85  # 5th percentile proxy
-        y_upper = y_pred_unscaled * 1.15  # 95th percentile proxy
+        y_lower = y_pred_unscaled * 0.85  
+        y_upper = y_pred_unscaled * 1.15  
         
         return {
             'forecast': y_pred_unscaled,
@@ -810,21 +562,14 @@ class WaterDemandLSTMModel:
         }
     
     def incremental_retrain(self, new_data: np.ndarray, new_targets: np.ndarray):
-        """
-        Incremental retraining with recent data (daily update).
-        
-        Args:
-            new_data: New sequences (samples × lookback × features)
-            new_targets: New targets (samples × horizon)
-        """
+ 
         if not self.is_trained:
             raise ValueError("Model must be trained first")
         
         logger.info(f"Incremental retraining with {len(new_data)} new sequences")
         
-        # Fine-tune on new data with low learning rate
         self.model.compile(
-            optimizer=Adam(learning_rate=0.0001),  # Lower LR for fine-tuning
+            optimizer=Adam(learning_rate=0.0001), 
             loss='mse'
         )
         
@@ -839,7 +584,6 @@ class WaterDemandLSTMModel:
         logger.info("Incremental retraining complete")
     
     def save(self, filepath: str):
-        """Save model and scaler."""
         self.model.save(filepath)
         scaler_path = filepath.replace('.h5', '_scaler.pkl')
         with open(scaler_path, 'wb') as f:
@@ -847,7 +591,6 @@ class WaterDemandLSTMModel:
         logger.info(f"Model saved to {filepath}")
     
     def load(self, filepath: str):
-        """Load model and scaler."""
         self.model = keras.models.load_model(filepath)
         scaler_path = filepath.replace('.h5', '_scaler.pkl')
         with open(scaler_path, 'rb') as f:
@@ -855,32 +598,17 @@ class WaterDemandLSTMModel:
         self.is_trained = True
         logger.info(f"Model loaded from {filepath}")
 
-
-# ============================================================================
-# 3. UNIFIED FORECASTING SERVICE
-# ============================================================================
-
 class WaterDemandForecastingService:
-    """
-    Unified interface for both statistical and ML-based forecasting.
-    
-    This service manages:
-    - Short-term forecasts (LSTM)
-    - Medium-term forecasts (Prophet)
-    - Confidence intervals
-    - Model evaluation and retraining
-    - EXPLAINABILITY (critical for government adoption)
-    """
+
     
     def __init__(self, zone_id: str):
-        """Initialize forecasting service for a zone."""
         self.zone_id = zone_id
         self.lstm_model = WaterDemandLSTMModel(zone_id)
         self.prophet_model = WaterDemandProphetModel(zone_id)
         self.explainer = ForecastExplainer(zone_id=zone_id, region_type='zone')
         self.last_training_date = None
         self.feature_names = None
-        self.baseline_demand = 500  # Default baseline (MLD)
+        self.baseline_demand = 500  
         
     def train_all_models(
         self,
@@ -888,29 +616,15 @@ class WaterDemandForecastingService:
         hourly_df: pd.DataFrame,
         hourly_feature_columns: List[str]
     ) -> Dict:
-        """
-        Train both LSTM and Prophet models.
-        
-        Args:
-            daily_df: Daily demand data for Prophet
-            hourly_df: Hourly data with features for LSTM
-            hourly_feature_columns: Feature column names for LSTM
-            
-        Returns:
-            Dictionary with both model metrics
-        """
+
         logger.info(f"Training all models for {self.zone_id}")
         
-        # Store feature names for later use in explainability
         self.feature_names = hourly_feature_columns
         
-        # Calculate baseline for explanations
         self.baseline_demand = float(daily_df['demand_mld'].mean())
         
-        # Train Prophet (medium-term)
         prophet_metrics = self.prophet_model.train(daily_df)
         
-        # Train LSTM (short-term)
         lstm_metrics = self.lstm_model.train(
             hourly_df,
             hourly_feature_columns
@@ -931,17 +645,7 @@ class WaterDemandForecastingService:
         hours_ahead: int = 24,
         include_explanation: bool = True
     ) -> Dict:
-        """
-        Generate 1-7 day forecast using LSTM with explanations.
-        
-        Args:
-            recent_data: Last 7 days of hourly data (168 hours × features)
-            hours_ahead: Hours to forecast (24, 48, 168, etc.)
-            include_explanation: Whether to generate plain-English explanation
-            
-        Returns:
-            Dictionary with hourly forecasts, confidence intervals, AND explanations
-        """
+
         if hours_ahead != self.lstm_model.forecast_horizon:
             logger.warning(f"LSTM trained for {self.lstm_model.forecast_horizon}h, "
                           f"but {hours_ahead}h requested. Using trained horizon.")
@@ -960,16 +664,15 @@ class WaterDemandForecastingService:
             'generated_at': datetime.now().isoformat()
         }
         
-        # Add explanations if requested
+   
         if include_explanation and self.feature_names:
-            # Calculate feature importance
+
             feature_importance = self.explainer.calculate_lstm_feature_importance(
                 self.lstm_model,
                 recent_data,
                 self.feature_names
             )
-            
-            # Generate plain-English explanation
+
             forecast_value = float(result['forecast'][0])
             explanation = self.explainer.generate_plain_english_explanation(
                 forecast_value=forecast_value,
@@ -988,16 +691,6 @@ class WaterDemandForecastingService:
         days_ahead: int = 180,
         include_explanation: bool = True
     ) -> Dict:
-        """
-        Generate 1-6 month forecast using Prophet with explanations.
-        
-        Args:
-            days_ahead: Days to forecast (typical: 180 for 6 months)
-            include_explanation: Whether to include component analysis
-            
-        Returns:
-            Dictionary with daily forecasts and confidence intervals + explanations
-        """
         forecast_df = self.prophet_model.forecast(days_ahead)
         
         medium_term_result = {
@@ -1010,11 +703,9 @@ class WaterDemandForecastingService:
             'generated_at': datetime.now().isoformat()
         }
         
-        # Add component analysis for explainability
         if include_explanation:
             components = self.explainer.analyze_prophet_components(self.prophet_model)
-            
-            # Generate explanation based on first day forecast
+
             first_forecast = float(forecast_df.iloc[0]['yhat'])
             explanation = self.explainer.generate_plain_english_explanation(
                 forecast_value=first_forecast,
@@ -1032,7 +723,7 @@ class WaterDemandForecastingService:
     
     @staticmethod
     def _describe_trend(forecast_df: pd.DataFrame) -> str:
-        """Describe trend direction from forecast."""
+
         if len(forecast_df) < 2:
             return "Insufficient data for trend analysis"
         
@@ -1049,12 +740,6 @@ class WaterDemandForecastingService:
             return f"Demand trend: STABLE (±{abs(change_pct):.1f}% variation over {len(forecast_df)} days)"
     
     def get_forecast_explanations(self) -> Dict:
-        """
-        Extract interpretable explanations from both models.
-        
-        Returns:
-            Dictionary with feature importance, seasonal decomposition, etc.
-        """
         components = self.prophet_model.get_components()
         
         return {
@@ -1073,23 +758,6 @@ class WaterDemandForecastingService:
         ward_forecast: float = None,
         feature_importance: Dict[str, float] = None
     ) -> Dict[str, str]:
-        """
-        Generate tailored briefing for different governance levels.
-        
-        Useful for presenting forecast to different decision-makers:
-        - CITY LEVEL: Mayor, Commissioner (strategic 6-month planning)
-        - ZONE LEVEL: Zone Superintendent (weekly operations & alerts)
-        - WARD LEVEL: Ward Officer (micro-targeted conservation campaigns)
-        
-        Args:
-            city_forecast: City-wide predicted demand (MLD)
-            zone_forecast: Zone-specific forecast (MLD)
-            ward_forecast: Ward-level forecast (MLD, if available)
-            feature_importance: Features driving change (from LSTM analysis)
-            
-        Returns:
-            Dictionary with briefings for each governance level
-        """
         city_baseline = self.baseline_demand  # Simplified
         zone_baseline = self.baseline_demand * 0.9  # Zones typically smaller
         ward_baseline = self.baseline_demand * 0.3 if ward_forecast else None
@@ -1108,15 +776,6 @@ class WaterDemandForecastingService:
         self,
         test_df: pd.DataFrame
     ) -> Dict:
-        """
-        Compare forecast accuracy and model performance.
-        
-        Args:
-            test_df: Test set with actual and forecast values
-            
-        Returns:
-            Dictionary with comparative metrics
-        """
         return {
             'lstm_metrics': self.lstm_model.train_metrics,
             'prophet_metrics': {
@@ -1127,7 +786,6 @@ class WaterDemandForecastingService:
         }
     
     def _get_model_recommendation(self) -> str:
-        """Recommend which model to use based on training metrics."""
         lstm_mape = self.lstm_model.train_metrics.get('mape', float('inf'))
         prophet_mape = self.prophet_model.train_mape or float('inf')
         
@@ -1136,37 +794,18 @@ class WaterDemandForecastingService:
         else:
             return f"Prophet (MAPE: {prophet_mape:.2%}) for longer-term planning"
 
-
-# ============================================================================
-# 4. EVALUATION & METRICS
-# ============================================================================
-
 class ForecastEvaluator:
-    """Comprehensive evaluation of forecast accuracy and reliability."""
     
     @staticmethod
     def calculate_metrics(
         y_true: np.ndarray,
         y_pred: np.ndarray
     ) -> Dict[str, float]:
-        """
-        Calculate standard forecasting metrics.
-        
-        Metrics explanation:
-        - MAE: Average absolute error (same units as data, interpretable)
-        - RMSE: Root mean squared error (penalizes large errors)
-        - MAPE: Mean absolute percentage error (scale-independent, 0-100%)
-        
-        Why these for government:
-        - MAE: "Average forecast miss is X MLD"
-        - MAPE: "Forecast is X% off on average"
-        - RMSE: Captures extreme errors (important for alerts)
-        """
+
         mae = mean_absolute_error(y_true, y_pred)
         rmse = np.sqrt(mean_squared_error(y_true, y_pred))
         mape = mean_absolute_percentage_error(y_true, y_pred)
-        
-        # Additional interpretable metrics
+ 
         mean_demand = np.mean(y_true)
         
         return {
@@ -1184,17 +823,7 @@ class ForecastEvaluator:
         y_pred_lower: np.ndarray,
         y_pred_upper: np.ndarray
     ) -> Dict[str, float]:
-        """
-        Evaluate quality of confidence interval estimates.
-        
-        Args:
-            y_true: Actual values
-            y_pred_lower: Lower confidence bound
-            y_pred_upper: Upper confidence bound
-            
-        Returns:
-            Coverage rate (should be ~95% for 95% CI)
-        """
+
         coverage = np.mean((y_true >= y_pred_lower) & (y_true <= y_pred_upper))
         width = np.mean(y_pred_upper - y_pred_lower)
         
@@ -1210,7 +839,7 @@ class ForecastEvaluator:
         metrics: Dict,
         ci_metrics: Dict
     ) -> str:
-        """Generate human-readable evaluation report for stakeholders."""
+
         report = f"""
         ╔════════════════════════════════════════════════════════════╗
         ║         WATER DEMAND FORECAST EVALUATION REPORT            ║
@@ -1251,40 +880,11 @@ class ForecastEvaluator:
         """
         return report
 
-
-# ============================================================================
-# 5. SCENARIO SIMULATION MODULE
-# ============================================================================
-
 class ScenarioSimulator:
-    """
-    Water demand scenario simulator for strategic planning.
-    
-    Allows water authorities to model various conditions and their impact on demand:
-    - Heatwaves (prolonged high temperatures)
-    - Rainfall variations (deficit or surplus)
-    - Population growth surges
-    - Festival overlaps (multiple events simultaneously)
-    - Industrial activity changes
-    
-    For each scenario, computes:
-    - Updated demand forecast
-    - Water stress percentage (demand/supply ratio)
-    - Risk category (Low/Medium/High)
-    - Actionable recommendations
-    
-    Enables proactive planning: "What if X happens? What do we need to do?"
-    """
+
     
     def __init__(self, zone_id: str, baseline_demand: float, available_supply: float):
-        """
-        Initialize scenario simulator.
-        
-        Args:
-            zone_id: Geographic zone (e.g., 'ZONE_A')
-            baseline_demand: Typical daily demand (MLD)
-            available_supply: Maximum supply capacity (MLD)
-        """
+
         self.zone_id = zone_id
         self.baseline_demand = baseline_demand
         self.available_supply = available_supply
@@ -1292,18 +892,7 @@ class ScenarioSimulator:
         self.scenarios_history = []
         
     def apply_heatwave(self, num_days: int, max_temp: float = 45) -> Dict:
-        """
-        Simulate prolonged heatwave conditions.
-        
-        Args:
-            num_days: Duration of heatwave (days)
-            max_temp: Peak temperature (°C)
-            
-        Returns:
-            Dictionary with scenario details and impact analysis
-        """
-        # Heat increases water demand
-        # Research: +5% per degree above 35°C
+ 
         temp_excess = max(0, max_temp - 35)  # Degrees above baseline
         demand_increase_pct = temp_excess * 0.05  # 5% per degree
         
@@ -1324,19 +913,7 @@ class ScenarioSimulator:
         return self._analyze_scenario(scenario)
     
     def apply_rainfall_change(self, rainfall_change_pct: float) -> Dict:
-        """
-        Simulate rainfall deficit or surplus.
-        
-        Args:
-            rainfall_change_pct: Percentage change in rainfall
-                                 Negative = deficit, Positive = surplus
-            
-        Returns:
-            Dictionary with scenario details and impact analysis
-        """
-        # Rainfall deficit increases demand (less water from rain)
-        # Rainfall surplus decreases demand (groundwater recharge)
-        # Research: ±3% demand change per 20% rainfall change
+  
         demand_change_pct = -(rainfall_change_pct / 20) * 3
         
         scenario = {
@@ -1354,19 +931,7 @@ class ScenarioSimulator:
         return self._analyze_scenario(scenario)
     
     def apply_population_surge(self, growth_pct: float, duration_days: int = 30) -> Dict:
-        """
-        Simulate population growth or influx (festivals, events, migration).
-        
-        Args:
-            growth_pct: Population increase percentage
-            duration_days: How long the surge lasts
-            
-        Returns:
-            Dictionary with scenario details and impact analysis
-        """
-        # Additional people need water
-        # Research: ~150L per person per day in urban areas
-        # Growth scales linearly with population
+ 
         demand_change_pct = growth_pct  # 1% population growth = ~1% demand growth
         
         scenario = {
@@ -1385,18 +950,7 @@ class ScenarioSimulator:
         return self._analyze_scenario(scenario)
     
     def apply_festival_overlap(self, num_festivals: int, avg_attendees: int = 50000) -> Dict:
-        """
-        Simulate multiple festivals/events overlapping.
-        
-        Args:
-            num_festivals: Number of simultaneous festivals
-            avg_attendees: Average attendees per festival
-            
-        Returns:
-            Dictionary with scenario details and impact analysis
-        """
-        # Festivals need water for: ceremonies, cleaning, temporary camps, festivities
-        # Research: ~200L per person per day during festival season
+
         total_attendees = num_festivals * avg_attendees
         festival_demand_mld = (total_attendees * 200) / 1_000_000  # Convert L to MLD
         demand_change_pct = (festival_demand_mld / self.baseline_demand) * 100
@@ -1418,17 +972,6 @@ class ScenarioSimulator:
         return self._analyze_scenario(scenario)
     
     def apply_industrial_change(self, change_pct: float) -> Dict:
-        """
-        Simulate industrial activity increase/decrease.
-        
-        Args:
-            change_pct: Percentage change in industrial water demand
-                       Positive = more factories, Negative = shutdowns
-            
-        Returns:
-            Dictionary with scenario details and impact analysis
-        """
-        # Industrial demand is ~30% of total in typical Indian cities
         industrial_baseline = self.baseline_demand * 0.3
         industrial_change_mld = industrial_baseline * (change_pct / 100)
         demand_change_pct = (industrial_change_mld / self.baseline_demand) * 100
@@ -1448,15 +991,7 @@ class ScenarioSimulator:
         return self._analyze_scenario(scenario)
     
     def combine_scenarios(self, scenarios: List[Dict]) -> Dict:
-        """
-        Combine multiple scenarios to see cumulative impact.
-        
-        Args:
-            scenarios: List of scenario dictionaries from individual scenario methods
-            
-        Returns:
-            Combined scenario with aggregate impact analysis
-        """
+
         total_demand_increase = sum(s['demand_increase_mld'] for s in scenarios)
         total_demand = self.baseline_demand + total_demand_increase
         combined_demand_pct = (total_demand_increase / self.baseline_demand) * 100
@@ -1476,22 +1011,12 @@ class ScenarioSimulator:
         return self._analyze_scenario(combined)
     
     def _analyze_scenario(self, scenario: Dict) -> Dict:
-        """
-        Analyze scenario and compute stress metrics.
-        
-        Args:
-            scenario: Scenario dictionary with demand forecast
-            
-        Returns:
-            Enhanced scenario with stress analysis and recommendations
-        """
+
         forecast_demand = scenario['forecast_demand']
         
-        # Calculate stress metrics
         stress_ratio = forecast_demand / self.available_supply
         stress_pct = (stress_ratio - 1) * 100 if stress_ratio > 1 else 0
         
-        # Determine risk category
         if stress_ratio <= 0.8:
             risk_category = 'Low'
             risk_description = 'Supply comfortable, no rationing needed'
@@ -1508,7 +1033,6 @@ class ScenarioSimulator:
             risk_category = 'High'
             risk_description = 'Severe shortage, immediate action required'
         
-        # Calculate deficit/surplus
         deficit_mld = max(0, forecast_demand - self.available_supply)
         surplus_mld = max(0, self.available_supply - forecast_demand)
         
@@ -1519,7 +1043,6 @@ class ScenarioSimulator:
             scenario.get('type', 'combined')
         )
         
-        # Enhance scenario with analysis
         scenario.update({
             'supply_available_mld': self.available_supply,
             'demand_forecast_mld': forecast_demand,
@@ -1540,17 +1063,7 @@ class ScenarioSimulator:
     
     @staticmethod
     def _generate_recommendations(stress_ratio: float, deficit_mld: float, scenario_type: str) -> List[str]:
-        """
-        Generate actionable recommendations based on stress level.
-        
-        Args:
-            stress_ratio: Demand/Supply ratio
-            deficit_mld: Shortage in MLD
-            scenario_type: Type of scenario
-            
-        Returns:
-            List of specific recommendations
-        """
+ 
         recommendations = []
         
         if stress_ratio <= 0.8:
@@ -1581,8 +1094,6 @@ class ScenarioSimulator:
             recommendations.append('→ Declare water emergency')
             recommendations.append('→ Activate all crisis measures')
             recommendations.append('→ Coordinate with neighboring water boards')
-        
-        # Type-specific recommendations
         if scenario_type == 'heatwave':
             recommendations.append('→ Heat: Increase cooling water supply from groundwater')
             recommendations.append('→ Public: Reduce shower duration and garden watering')
@@ -1606,15 +1117,6 @@ class ScenarioSimulator:
         return recommendations
     
     def generate_scenario_report(self, scenario: Dict = None) -> str:
-        """
-        Generate human-readable scenario analysis report.
-        
-        Args:
-            scenario: Scenario to report (uses current if not provided)
-            
-        Returns:
-            Formatted text report
-        """
         if scenario is None:
             scenario = self.current_scenario
         
@@ -1678,23 +1180,6 @@ class ScenarioSimulator:
         return report
     
     def compare_scenarios(self, scenario_list: List[Dict]) -> str:
-        """
-        Compare multiple scenarios side-by-side.
-        
-        Args:
-            scenario_list: List of scenario dictionaries
-            
-        Returns:
-            Formatted comparison table
-        """
-        comparison = f"""
-╔════════════════════════════════════════════════════════════════════════════════╗
-║                    SCENARIO COMPARISON ANALYSIS                               ║
-╠════════════════════════════════════════════════════════════════════════════════╣
-║
-║ Scenario Name            │ Demand │ Stress │ Risk Category  │ Deficit/Surplus
-║ ─────────────────────────┼────────┼────────┼────────────────┼──────────────
-"""
         
         for scenario in scenario_list:
             name = scenario['name'][:20].ljust(20)
@@ -1712,28 +1197,14 @@ class ScenarioSimulator:
         comparison += "║\n╚════════════════════════════════════════════════════════════════════════════════╝"
         return comparison
 
-
-# ============================================================================
-# 6. EXAMPLE USAGE & TRAINING PIPELINE
-# ============================================================================
-
 def example_training_pipeline():
-    """
-    Complete example of training and using the forecasting system.
-    """
-    
+
     print("=" * 70)
     print("URBAN WATER INTELLIGENCE PLATFORM - FORECASTING ENGINE")
     print("=" * 70)
-    
-    # ─────────────────────────────────────────────────────────────
-    # Step 1: Load and prepare data
-    # ─────────────────────────────────────────────────────────────
-    
+
     print("\n[1] Loading historical data...")
-    
-    # In production, load from database
-    # For now, create synthetic data
+
     dates = pd.date_range('2023-01-01', '2025-12-31', freq='H')
     
     # Synthetic hourly demand with seasonality
@@ -1768,10 +1239,6 @@ def example_training_pipeline():
     
     print(f"   ✓ Loaded {len(hourly_df):,} hourly records ({len(daily_df)} days)")
     
-    # ─────────────────────────────────────────────────────────────
-    # Step 2: Train models
-    # ─────────────────────────────────────────────────────────────
-    
     print("\n[2] Training forecasting models...")
     
     service = WaterDemandForecastingService(zone_id='ZONE_A')
@@ -1796,10 +1263,6 @@ def example_training_pipeline():
     print("\n   LSTM (Short-term):")
     print(f"     RMSE: {training_metrics['lstm']['rmse']:.2f} MLD")
     print(f"     MAPE: {training_metrics['lstm']['mape']:.2%}")
-    
-    # ─────────────────────────────────────────────────────────────
-    # Step 3: Generate forecasts WITH EXPLANATIONS
-    # ─────────────────────────────────────────────────────────────
     
     print("\n[3] Generating forecasts WITH EXPLANATIONS...")
     
@@ -1838,11 +1301,7 @@ def example_training_pipeline():
     if 'explanation' in medium_term:
         print(f"\n   Why this forecast?")
         print("   " + "\n   ".join(medium_term['explanation'].split("\n")[:6]))
-    
-    # ─────────────────────────────────────────────────────────────
-    # Step 4: Evaluate models
-    # ─────────────────────────────────────────────────────────────
-    
+
     print("\n[4] Evaluating forecast quality...")
     
     y_true = daily_df['demand_mld'].tail(100).values
@@ -1856,11 +1315,7 @@ def example_training_pipeline():
     )
     
     print(ForecastEvaluator.generate_report(metrics, ci_metrics))
-    
-    # ─────────────────────────────────────────────────────────────
-    # Step 5: Multi-level governance briefings
-    # ─────────────────────────────────────────────────────────────
-    
+
     print("\n[5] GOVERNANCE BRIEFINGS (for different decision-makers)...")
     
     city_forecast = 600.0  # Entire Mumbai
@@ -1907,10 +1362,6 @@ def example_training_pipeline():
     recs = briefings['recommendation'].split('\n')
     for rec in recs:
         print(f"   {rec}")
-    
-    # ─────────────────────────────────────────────────────────────
-    # Step 6: SCENARIO SIMULATION - What-If Analysis
-    # ─────────────────────────────────────────────────────────────
     
     print("\n[6] SCENARIO SIMULATION - What-If Analysis...")
     print("     Planning for different conditions to stress-test supply")
@@ -1999,74 +1450,26 @@ def example_training_pipeline():
     print("=" * 70)
 
 
-# ============================================================================
-# 7. WATER DISTRIBUTION RECOMMENDATION ENGINE
-# ============================================================================
-
 class WaterDistributionRecommender:
-    """
-    Water Distribution Recommendation Engine
-    ========================================
-    
-    Purpose:
-    --------
-    Given forecasted demand and available supply, recommend optimal water distribution
-    across zones with different priority levels (hospitals, residential, industrial).
-    
-    Principles:
-    -----------
-    1. CRITICAL SERVICES FIRST
-       → Hospitals, fire departments, emergency services get guaranteed supply
-       → No rationing for life-critical needs
-    
-    2. ESSENTIAL CONSUMPTION NEXT
-       → Residential (drinking, cooking, sanitation)
-       → Minimum per-capita allocation maintained
-    
-    3. NON-ESSENTIAL GETS RATIONED
-       → Industrial uses (cooling, processing)
-       → Agricultural uses
-       → Non-essential commercial
-    
-    4. MAXIMIZE STORAGE UTILIZATION
-       → Use surplus in good times to build reserves
-       → Use reserves carefully during shortages
-       → Keep minimum safety buffer (10% of capacity)
-    
-    5. FAIRNESS & PREDICTABILITY
-       → Clear allocation rules (not arbitrary)
-       → Businesses can plan around rationing schedule
-       → Transparency builds public trust
-    """
-    
+
     def __init__(self):
-        """Initialize distribution recommender with zone configurations."""
+
         self.zones = {}
         self.allocation_history = []
         self.shortage_alerts = []
-        
-        # Standard zone priorities
+
         self.priority_levels = {
-            'critical': 1,      # Hospitals, fire, emergency
-            'essential': 2,     # Residential (drinking/sanitation minimum)
-            'standard': 3,      # Residential (full comfort)
-            'commercial': 4,    # Non-essential commercial
-            'industrial': 5,    # Industrial & agricultural
-            'discretionary': 6  # Parks, fountains, etc.
+            'critical': 1,     
+            'essential': 2,  
+            'standard': 3,    
+            'commercial': 4,   
+            'industrial': 5,    
+            'discretionary': 6  
         }
     
     def add_zone(self, zone_id: str, priority: str, min_demand_mld: float, 
                  max_demand_mld: float, current_population: int = None):
-        """
-        Add a zone to the distribution network.
-        
-        Args:
-            zone_id: Zone identifier (e.g., 'ZONE_CENTRAL')
-            priority: Priority level (critical, essential, standard, commercial, industrial, discretionary)
-            min_demand_mld: Minimum demand (MLD) - survival level
-            max_demand_mld: Maximum demand (MLD) - normal operation
-            current_population: Zone population for per-capita calculations
-        """
+
         self.zones[zone_id] = {
             'priority': priority,
             'priority_level': self.priority_levels.get(priority, 5),
@@ -2083,48 +1486,21 @@ class WaterDistributionRecommender:
                                current_storage_mld: float,
                                max_daily_supply_mld: float,
                                safety_buffer_percentage: float = 10.0) -> Dict:
-        """
-        Recommend daily water release from reservoir.
-        
-        Strategy:
-        ---------
-        1. Calculate minimum water needed (critical + essential zones)
-        2. Check if current storage can provide it
-        3. Calculate safe release (don't deplete beyond safety buffer)
-        4. Release amount balances: adequacy + sustainability
-        
-        Args:
-            forecasted_demand_mld: Total forecasted demand (MLD)
-            reservoir_capacity_mld: Total reservoir capacity (MLD)
-            current_storage_mld: Current storage level (MLD)
-            max_daily_supply_mld: Physical limit on daily release (MLD)
-            safety_buffer_percentage: Minimum % of capacity to keep in reserve
-        
-        Returns:
-            Dictionary with release recommendation and reasoning
-        """
-        
-        # Calculate safety buffer (minimum storage to keep)
+
         safety_buffer_mld = (safety_buffer_percentage / 100) * reservoir_capacity_mld
         
-        # Usable storage (available for release)
         usable_storage = current_storage_mld - safety_buffer_mld
         usable_storage = max(usable_storage, 0)
         
-        # Calculate minimum needs (critical + essential)
         min_needs = self._calculate_minimum_needs()
         
-        # Recommended release logic:
         if usable_storage < 0:
-            # CRISIS: Storage is below safety buffer
             release = min(forecasted_demand_mld, max_daily_supply_mld)
             status = 'CRITICAL'
             reason = f"Storage {current_storage_mld:.1f} MLD below safety buffer {safety_buffer_mld:.1f} MLD"
         
         elif forecasted_demand_mld <= max_daily_supply_mld:
-            # NORMAL: Can meet full demand
             release = min(forecasted_demand_mld, max_daily_supply_mld)
-            # If storage above optimal level, reduce to maintain it
             storage_ratio = current_storage_mld / reservoir_capacity_mld
             if storage_ratio > 0.85:
                 release = min(release, max_daily_supply_mld * 0.95)
@@ -2132,12 +1508,10 @@ class WaterDistributionRecommender:
             reason = f"Supply {release:.1f} MLD covers demand {forecasted_demand_mld:.1f} MLD"
         
         else:
-            # SHORTAGE: Demand exceeds max supply
             release = max_daily_supply_mld
             status = 'SHORTAGE'
             reason = f"Demand {forecasted_demand_mld:.1f} MLD exceeds max supply {max_daily_supply_mld:.1f} MLD"
         
-        # Calculate impact after release
         storage_after_release = current_storage_mld - release
         days_to_empty = storage_after_release / (release + 0.01) if release > 0 else float('inf')
         
@@ -2162,26 +1536,7 @@ class WaterDistributionRecommender:
                          total_available_mld: float,
                          zone_demands: Dict[str, float],
                          apply_rationing: bool = False) -> Dict:
-        """
-        Allocate available water to zones based on priority.
-        
-        Algorithm:
-        ----------
-        1. Sort zones by priority level (lower number = higher priority)
-        2. Allocate to critical zones first (100% of min demand)
-        3. Allocate to essential zones (100% of min demand)
-        4. Allocate to standard zones (proportional to demand)
-        5. If shortage, start rationing from lowest priority zones
-        
-        Args:
-            total_available_mld: Total water available for allocation (MLD)
-            zone_demands: Dict of {zone_id: forecasted_demand_mld}
-            apply_rationing: Whether to apply rationing constraints
-        
-        Returns:
-            Dictionary with zone-wise allocation plan
-        """
-        
+
         allocation = {}
         sorted_zones = sorted(
             self.zones.items(),
@@ -2194,7 +1549,6 @@ class WaterDistributionRecommender:
         
         allocation_details = []
         
-        # PASS 1: Allocate to CRITICAL services (100%)
         for zone_id, zone_info in sorted_zones:
             if zone_info['priority_level'] <= self.priority_levels['critical']:
                 min_needed = zone_info['min_demand']
@@ -2209,7 +1563,6 @@ class WaterDistributionRecommender:
                     'rationing_status': 'NO RATIONING'
                 })
         
-        # PASS 2: Allocate to ESSENTIAL services (100% of minimum)
         for zone_id, zone_info in sorted_zones:
             if (zone_info['priority_level'] > self.priority_levels['critical'] and
                 zone_info['priority_level'] <= self.priority_levels['essential']):
@@ -2225,23 +1578,19 @@ class WaterDistributionRecommender:
                     'rationing_status': 'MINIMUM GUARANTEED'
                 })
         
-        # PASS 3: Proportional allocation to remaining zones
         for zone_id, zone_info in sorted_zones:
             if zone_id not in allocation:
                 demand = zone_demands.get(zone_id, zone_info['max_demand'])
                 
                 if remaining_supply > 0:
-                    # Proportional to demand, but cap at max supply
                     allocated = min(demand * shortage_ratio, remaining_supply)
                     allocation[zone_id] = max(0, allocated)
                     remaining_supply -= allocation[zone_id]
                     percentage = (allocation[zone_id] / demand * 100) if demand > 0 else 0
                 else:
-                    # No supply left - complete cutoff
                     allocation[zone_id] = 0
                     percentage = 0
                 
-                # Determine rationing status
                 if percentage >= 95:
                     rationing_status = 'NO RATIONING'
                 elif percentage >= 75:
@@ -2262,7 +1611,6 @@ class WaterDistributionRecommender:
                     'rationing_status': rationing_status
                 })
         
-        # Calculate summary statistics
         total_allocated = sum(allocation.values())
         total_shortage = max(0, total_demand - total_allocated)
         shortage_percentage = (total_shortage / total_demand * 100) if total_demand > 0 else 0
@@ -2285,23 +1633,7 @@ class WaterDistributionRecommender:
         }
     
     def calculate_rationing_schedule(self, shortage_percentage: float) -> Dict:
-        """
-        Create a rationing schedule for non-essential uses.
-        
-        Strategy:
-        ---------
-        - Tell public HOW MUCH they're short on
-        - WHEN the shortages will happen (morning peak vs evening)
-        - WHAT to expect & WHEN it will end
-        - This certainty is more valuable than no information
-        
-        Args:
-            shortage_percentage: Percentage shortage (0-100)
-        
-        Returns:
-            Rationing schedule with time slots and restrictions
-        """
-        
+
         if shortage_percentage <= 5:
             return {
                 'status': 'NO RATIONING',
@@ -2332,7 +1664,7 @@ class WaterDistributionRecommender:
                 'duration_estimate': 'Expected 7-14 days'
             }
         
-        else:  # > 30% shortage
+        else: 
             return {
                 'status': 'SEVERE RATIONING',
                 'schedule': '4-8 hour supply cuts, 2-3 times weekly',
@@ -2350,38 +1682,26 @@ class WaterDistributionRecommender:
     
     def generate_allocation_report(self, allocation_result: Dict, 
                                   reservoir_info: Dict) -> str:
-        """
-        Generate human-readable allocation report for decision makers.
-        
-        Args:
-            allocation_result: Output from allocate_to_zones()
-            reservoir_info: Reservoir status info
-        
-        Returns:
-            Formatted report string
-        """
-        
+
         report = []
         report.append("\n" + "=" * 80)
         report.append("WATER DISTRIBUTION ALLOCATION REPORT")
         report.append("=" * 80)
         report.append(f"\n📅 Generated: {allocation_result['timestamp']}")
         
-        # Overall status
         report.append(f"\n📊 OVERALL STATUS: {allocation_result['shortage_status']}")
         report.append(f"   Total Demand: {allocation_result['total_demand_mld']} MLD")
         report.append(f"   Available Supply: {allocation_result['total_available_mld']} MLD")
         report.append(f"   Total Allocation: {allocation_result['total_allocated_mld']} MLD")
         report.append(f"   Total Shortage: {allocation_result['total_shortage_mld']} MLD ({allocation_result['shortage_percentage']}%)")
         
-        # Zone-wise breakdown
         report.append("\n📍 ZONE-WISE ALLOCATION:")
         report.append("-" * 80)
         report.append(f"{'Zone':<20} {'Priority':<12} {'Demand':<12} {'Allocated':<12} {'%':<8} {'Status':<25}")
         report.append("-" * 80)
         
         for zone in allocation_result['zone_allocations']:
-            zone_id = zone['zone_id'][:15]  # Truncate for display
+            zone_id = zone['zone_id'][:15] 
             priority = zone['priority'][:11]
             demand = f"{zone['demand_mld']:.1f}"
             allocated = f"{zone['allocated_mld']:.1f}"
@@ -2392,7 +1712,6 @@ class WaterDistributionRecommender:
         
         report.append("-" * 80)
         
-        # Rationing schedule
         if allocation_result['shortage_percentage'] > 5:
             rationing = self.calculate_rationing_schedule(allocation_result['shortage_percentage'])
             report.append(f"\n⏰ RATIONING SCHEDULE: {rationing['status']}")
@@ -2405,7 +1724,6 @@ class WaterDistributionRecommender:
         return "\n".join(report)
     
     def _calculate_minimum_needs(self) -> float:
-        """Calculate total minimum water needed for critical + essential services."""
         min_needs = 0
         for zone in self.zones.values():
             if zone['priority_level'] <= self.priority_levels['essential']:
@@ -2414,7 +1732,6 @@ class WaterDistributionRecommender:
     
     def _assess_storage_health(self, current: float, capacity: float, 
                               buffer: float) -> str:
-        """Assess storage health based on current level."""
         ratio = current / capacity if capacity > 0 else 0
         
         if current < buffer:
@@ -2430,42 +1747,19 @@ class WaterDistributionRecommender:
         else:
             return '💧 FULL'
 
-
-# ============================================================================
-# 8. WATER RISK AND ALERT MANAGEMENT SYSTEM
-# ============================================================================
-
 class WaterRiskAlertManager:
-    """
-    Water Risk and Alert Management System
-    ======================================
-    
-    Purpose:
-    --------
-    Provides early warning of water shortages, calculates risk index,
-    and generates actionable alerts for 3-7 days in advance.
-    
-    Key Metrics:
-    - Water Stress Index (0-100): Overall water availability stress
-    - Alert Levels: Green, Yellow, Orange, Red
-    - Forecast Window: 3-7 days ahead
-    - Risk Factors: Demand, supply, storage, trends
-    """
     
     def __init__(self):
-        """Initialize risk alert manager."""
         self.alert_history = []
         self.stress_index_history = []
         
-        # Alert thresholds (Water Stress Index)
         self.thresholds = {
-            'green': (0, 35),           # 0-35: Safe, ample supply
-            'yellow': (35, 50),         # 35-50: Watch, monitor closely
-            'orange': (50, 75),         # 50-75: Prepare, restrictions likely
-            'red': (75, 100)            # 75-100: Critical, emergency
+            'green': (0, 35),          
+            'yellow': (35, 50),        
+            'orange': (50, 75),        
+            'red': (75, 100)           
         }
-        
-        # Alert configuration
+
         self.alert_levels = {
             'green': {'emoji': '🟢', 'severity': 0, 'name': 'SAFE'},
             'yellow': {'emoji': '🟡', 'severity': 1, 'name': 'WATCH'},
@@ -2480,86 +1774,46 @@ class WaterRiskAlertManager:
                                    max_daily_supply_mld: float,
                                    actual_inflow_mld: float = 0,
                                    trend_days: int = 7) -> Dict:
-        """
-        Compute Water Stress Index (0-100).
-        
-        Formula incorporates:
-        1. Supply-Demand Ratio (40% weight)
-        2. Storage Level (30% weight)
-        3. Trend (20% weight)
-        4. Buffer Safety (10% weight)
-        
-        Args:
-            forecasted_demand_mld: Expected demand (MLD)
-            current_storage_mld: Current water in reservoir (MLD)
-            reservoir_capacity_mld: Total capacity (MLD)
-            max_daily_supply_mld: Maximum daily supply (MLD)
-            actual_inflow_mld: Current water inflow (MLD)
-            trend_days: Days to calculate trend (default 7)
-        
-        Returns:
-            Dictionary with stress index and component breakdown
-        """
-        
-        # COMPONENT 1: Supply-Demand Ratio (40% weight)
-        # Measures: Can we meet demand with current supply?
         available_supply = min(max_daily_supply_mld, current_storage_mld + actual_inflow_mld)
         if forecasted_demand_mld > 0:
             supply_ratio = available_supply / forecasted_demand_mld
         else:
             supply_ratio = 1.0
-        
-        # Convert ratio to stress (lower supply relative to demand = higher stress)
-        # supply_ratio > 1.0 = surplus (low stress)
-        # supply_ratio = 0.5 = 50% shortage (high stress)
+ 
         supply_stress = max(0, min(100, (1.0 - supply_ratio) * 100))
-        
-        # COMPONENT 2: Storage Level (30% weight)
-        # Measures: How much water is left in reserve?
+
         storage_ratio = current_storage_mld / reservoir_capacity_mld if reservoir_capacity_mld > 0 else 0
-        
-        # Convert storage to stress (lower storage = higher stress)
-        # 100% full = 0 stress
-        # 0% empty = 100 stress
-        # Below 10% = critical stress
+
         if storage_ratio < 0.10:
-            storage_stress = 90 + (10 * (0.10 - storage_ratio) / 0.10)  # 90-100
+            storage_stress = 90 + (10 * (0.10 - storage_ratio) / 0.10)  
         elif storage_ratio < 0.25:
-            storage_stress = 75 + (15 * (0.25 - storage_ratio) / 0.15)  # 75-90
+            storage_stress = 75 + (15 * (0.25 - storage_ratio) / 0.15)  
         elif storage_ratio < 0.5:
-            storage_stress = 40 + (35 * (0.5 - storage_ratio) / 0.25)   # 40-75
+            storage_stress = 40 + (35 * (0.5 - storage_ratio) / 0.25)   
         else:
-            storage_stress = 40 * (1.0 - storage_ratio)                  # 0-40
+            storage_stress = 40 * (1.0 - storage_ratio)                  
         
-        # COMPONENT 3: Trend (20% weight)
-        # Measures: Is storage increasing or decreasing?
-        # Positive trend (refilling) = lower stress
-        # Negative trend (depleting) = higher stress
         daily_change = (actual_inflow_mld - forecasted_demand_mld)
         days_to_empty = current_storage_mld / (forecasted_demand_mld + 0.01) if forecasted_demand_mld > 0 else float('inf')
         
         if days_to_empty < 7:
-            trend_stress = 80  # Critical trend
+            trend_stress = 80  
         elif days_to_empty < 14:
-            trend_stress = 60  # Concerning trend
+            trend_stress = 60  
         elif days_to_empty < 30:
-            trend_stress = 40  # Moderate trend
+            trend_stress = 40
         elif daily_change > 0:
-            trend_stress = 10  # Positive trend (refilling)
+            trend_stress = 10  
         else:
-            trend_stress = 30  # Slight negative trend
+            trend_stress = 30  
         
-        # COMPONENT 4: Buffer Safety (10% weight)
-        # Measures: Are we protecting the safety buffer?
         safety_buffer = 0.10 * reservoir_capacity_mld
         if current_storage_mld < safety_buffer:
-            buffer_stress = 100  # Critical - below buffer
+            buffer_stress = 100  
         else:
             remaining_usable = current_storage_mld - safety_buffer
-            # Stress based on how much buffer room we have
             buffer_stress = max(0, 50 - (remaining_usable / reservoir_capacity_mld) * 100)
         
-        # WEIGHTED COMBINATION
         stress_index = (
             supply_stress * 0.40 +
             storage_stress * 0.30 +
@@ -2567,10 +1821,8 @@ class WaterRiskAlertManager:
             buffer_stress * 0.10
         )
         
-        # Cap between 0-100
         stress_index = max(0, min(100, stress_index))
         
-        # Determine alert level
         alert_level = self._get_alert_level(stress_index)
         
         return {
@@ -2595,21 +1847,8 @@ class WaterRiskAlertManager:
                                   forecasted_demands: List[float],
                                   forecasted_inflows: List[float] = None,
                                   max_daily_supply_mld: float = 165.0) -> Dict:
-        """
-        Predict water shortages 3-7 days in advance.
-        
-        Args:
-            current_storage_mld: Current storage level (MLD)
-            forecasted_demands: List of daily demands (7 days forward)
-            forecasted_inflows: List of daily inflows (7 days forward)
-            max_daily_supply_mld: Maximum supply capacity (MLD)
-        
-        Returns:
-            Dictionary with day-by-day shortage forecast
-        """
-        
+
         if forecasted_inflows is None:
-            # If no inflow forecast, assume zero
             forecasted_inflows = [0.0] * len(forecasted_demands)
         
         storage = current_storage_mld
@@ -2620,10 +1859,8 @@ class WaterRiskAlertManager:
             demand = forecasted_demands[day]
             inflow = forecasted_inflows[day] if day < len(forecasted_inflows) else 0.0
             
-            # Available supply = min(physical capacity, storage + inflow)
             available = min(max_daily_supply_mld, storage + inflow)
             
-            # Calculate shortage
             if demand > available:
                 shortage = demand - available
                 shortage_pct = (shortage / demand) * 100
@@ -2633,11 +1870,8 @@ class WaterRiskAlertManager:
                 shortage_pct = 0
                 status = 'ADEQUATE'
             
-            # Update storage for next day
-            # (actual release = available supply, not demand)
             storage = max(0, storage + inflow - available)
             
-            # Determine alert for this day
             alert = self._get_shortage_alert(shortage_pct, storage)
             
             daily_forecasts.append({
@@ -2651,12 +1885,10 @@ class WaterRiskAlertManager:
                 'status': status,
                 'alert': alert
             })
-            
-            # Track days with shortages
+        
             if shortage > 0:
                 shortage_days.append(day + 1)
-        
-        # Determine overall 7-day outlook
+
         max_shortage = max([f['shortage_pct'] for f in daily_forecasts], default=0)
         shortage_risk = 'NONE'
         if max_shortage > 0 and max_shortage < 10:
@@ -2685,23 +1917,10 @@ class WaterRiskAlertManager:
                               forecasted_shortage_pct: float,
                               days_to_critical: int = None,
                               zone_impacts: Dict = None) -> Dict:
-        """
-        Generate alert message with recommended actions.
-        
-        Args:
-            stress_index: Current water stress (0-100)
-            alert_level: 'green', 'yellow', 'orange', 'red'
-            forecasted_shortage_pct: Expected shortage % in 7 days
-            days_to_critical: Days until critical (if applicable)
-            zone_impacts: Dict of zone impacts
-        
-        Returns:
-            Alert message with emoji, severity, description, actions
-        """
-        
+
         alert_info = self.alert_levels.get(alert_level, self.alert_levels['yellow'])
         
-        # Alert message (escalates with severity)
+
         if alert_level == 'green':
             headline = "SAFE: Water supply adequate"
             description = f"Current stress index {stress_index:.0f}/100 indicates healthy water availability."
@@ -2758,7 +1977,7 @@ class WaterRiskAlertManager:
             ]
             duration = "Ongoing crisis - continuous monitoring"
         
-        # Calculate time to crisis if provided
+  
         time_to_critical_text = ""
         if days_to_critical is not None and days_to_critical > 0:
             if days_to_critical == 1:
@@ -2767,8 +1986,7 @@ class WaterRiskAlertManager:
                 time_to_critical_text = f"Crisis expected in {days_to_critical} days."
             else:
                 time_to_critical_text = f"Crisis possible in {days_to_critical} days if trend continues."
-        
-        # Zone impacts (if provided)
+   
         zone_impact_text = ""
         if zone_impacts:
             affected_zones = [z for z, impact in zone_impacts.items() if impact > 0]
@@ -2806,17 +2024,7 @@ class WaterRiskAlertManager:
                                            stress_index: float,
                                            shortage_forecast: Dict,
                                            zone_allocations: Dict = None) -> str:
-        """
-        Generate comprehensive alert report for decision makers.
-        
-        Args:
-            stress_index: Water stress index (0-100)
-            shortage_forecast: Output from predict_shortages_forward()
-            zone_allocations: Optional zone allocation info
-        
-        Returns:
-            Formatted alert report string
-        """
+
         
         alert_level = self._get_alert_level(stress_index)
         alert_info = self.alert_levels[alert_level]
@@ -2841,14 +2049,13 @@ class WaterRiskAlertManager:
         else:
             report.append("   Status: CRITICAL - Emergency conditions")
         
-        # 7-Day Forecast
+   
         report.append(f"\n📊 7-DAY SHORTAGE FORECAST:")
         report.append(f"   Overall Risk: {shortage_forecast['shortage_risk_level']}")
         report.append(f"   Max Expected Shortage: {shortage_forecast['max_shortage_pct']}%")
         if shortage_forecast['days_with_shortage']:
             report.append(f"   Shortage Days: {shortage_forecast['days_with_shortage']}")
-        
-        # Daily Details
+
         report.append(f"\n   Daily Breakdown:")
         report.append(f"   {'Day':<5} {'Demand':<10} {'Supply':<10} {'Shortage':<12} {'Status':<12}")
         report.append(f"   {'-'*49}")
@@ -2861,7 +2068,6 @@ class WaterRiskAlertManager:
             status = day_forecast['status']
             report.append(f"   Day {day:<1} {demand:<10} {supply:<10} {shortage:<12} {status:<12}")
         
-        # Zone Impacts (if provided)
         if zone_allocations:
             report.append(f"\n📍 ZONE IMPACTS:")
             for zone in zone_allocations.get('zone_allocations', []):
@@ -2872,7 +2078,7 @@ class WaterRiskAlertManager:
         return "\n".join(report)
     
     def _get_alert_level(self, stress_index: float) -> str:
-        """Determine alert level based on stress index."""
+
         if stress_index < self.thresholds['yellow'][0]:
             return 'green'
         elif stress_index < self.thresholds['orange'][0]:
@@ -2883,7 +2089,6 @@ class WaterRiskAlertManager:
             return 'red'
     
     def _get_shortage_alert(self, shortage_pct: float, storage_remaining: float) -> str:
-        """Determine alert for a specific shortage event."""
         if shortage_pct == 0:
             return 'SAFE'
         elif shortage_pct < 10:
@@ -2892,6 +2097,427 @@ class WaterRiskAlertManager:
             return 'MODERATE'
         else:
             return 'SEVERE'
+
+class WaterRecyclingClassifier:
+
+    def __init__(self):
+
+        self.categories = {
+            'greywater': {
+                'name': 'Greywater',
+                'source': 'Sinks, showers, washing machines, baths',
+                'recyclability': 'Yes',
+                'recyclability_score': 0.85,  # 0-1 scale
+                'treatment_complexity': 'Low-Medium',
+                'typical_reuse_purposes': [
+                    'Toilet flushing',
+                    'Landscape irrigation',
+                    'Industrial cooling',
+                    'Process water',
+                    'Groundwater recharge'
+                ],
+                'recoverable_percentage': 0.65,  
+                'freshwater_demand_reduction': 0.30,  
+                'quality_parameters': {
+                    'suspended_solids': 'High',
+                    'organic_content': 'Medium',
+                    'pathogens': 'Low-Medium',
+                    'chemicals': 'Medium (soaps, detergents)'
+                },
+                'estimated_volume_pld': 50,  # Per liter per day per person
+                'cost_per_kld': 8,  # Cost to recycle (INR per kiloliter)
+                'color': '#4A90E2',  # Blue
+                'emoji': '🚿'
+            },
+            'blackwater': {
+                'name': 'Blackwater',
+                'source': 'Human waste and sewage water',
+                'recyclability': 'Partial',
+                'recyclability_score': 0.40,  # Lower - requires intensive treatment
+                'treatment_complexity': 'High',
+                'typical_reuse_purposes': [
+                    'Biogas generation',
+                    'Fertilizer production (after composting)',
+                    'Industrial reuse (limited)',
+                    'Non-potable irrigation (after advanced treatment)'
+                ],
+                'recoverable_percentage': 0.35,  # 35% recovery after treatment
+                'freshwater_demand_reduction': 0.15,  # 15% reduction potential
+                'quality_parameters': {
+                    'suspended_solids': 'Very High',
+                    'organic_content': 'Very High',
+                    'pathogens': 'High',
+                    'chemicals': 'High (medications, cleaning products)'
+                },
+                'estimated_volume_pld': 45,  # Per liter per day per person
+                'cost_per_kld': 18,  # Higher cost to recycle
+                'color': '#E74C3C',  # Red
+                'emoji': '🚽'
+            },
+            'industrial_wastewater': {
+                'name': 'Industrial Wastewater',
+                'source': 'Manufacturing, processing, chemical plants',
+                'recyclability': 'Partial',
+                'recyclability_score': 0.60,  # Variable by industry
+                'treatment_complexity': 'High',
+                'typical_reuse_purposes': [
+                    'Cooling tower makeup',
+                    'Boiler feed (after treatment)',
+                    'Process water (same industry)',
+                    'Dust suppression',
+                    'General washing'
+                ],
+                'recoverable_percentage': 0.55,  # 55% recovery potential
+                'freshwater_demand_reduction': 0.45,  # 45% reduction potential (high volume)
+                'quality_parameters': {
+                    'suspended_solids': 'High',
+                    'organic_content': 'Medium-High',
+                    'pathogens': 'Low',
+                    'chemicals': 'Very High (heavy metals, oils, solvents)'
+                },
+                'estimated_volume_pld': 200,  # Much higher per unit (plants vary)
+                'cost_per_kld': 12,  # Medium cost to recycle
+                'color': '#F39C12',  # Orange
+                'emoji': '🏭'
+            },
+            'rainwater': {
+                'name': 'Rainwater Harvesting',
+                'source': 'Precipitation, roof catchment',
+                'recyclability': 'Yes',
+                'recyclability_score': 0.90,  # Highest recyclability
+                'treatment_complexity': 'Low',
+                'typical_reuse_purposes': [
+                    'Drinking water (after minimal treatment)',
+                    'Landscape irrigation',
+                    'Toilet flushing',
+                    'Vehicle washing',
+                    'Groundwater recharge (aquifer storage)'
+                ],
+                'recoverable_percentage': 0.80,  # 80% can be captured
+                'freshwater_demand_reduction': 0.20,  # 20% reduction (seasonal)
+                'quality_parameters': {
+                    'suspended_solids': 'Low',
+                    'organic_content': 'Low',
+                    'pathogens': 'Low',
+                    'chemicals': 'Low (dust, pollen)'
+                },
+                'estimated_volume_pld': 40,  # Per mm of rainfall per sqm
+                'cost_per_kld': 3,  # Lowest cost to treat
+                'color': '#27AE60',  # Green
+                'emoji': '🌧️'
+            },
+            'treated_sewage': {
+                'name': 'Treated Sewage Water',
+                'source': 'Processed blackwater from treatment plants',
+                'recyclability': 'Yes',
+                'recyclability_score': 0.75,  # Good - already treated
+                'treatment_complexity': 'Medium',
+                'typical_reuse_purposes': [
+                    'Non-potable irrigation',
+                    'Landscape watering',
+                    'Industrial process water',
+                    'Toilet flushing',
+                    'Dust suppression',
+                    'Aquifer recharge'
+                ],
+                'recoverable_percentage': 0.90,  # 90% available (already collected)
+                'freshwater_demand_reduction': 0.35,  # 35% reduction potential
+                'quality_parameters': {
+                    'suspended_solids': 'Low-Medium',
+                    'organic_content': 'Low',
+                    'pathogens': 'Low (post-treatment)',
+                    'chemicals': 'Low (residual)'
+                },
+                'estimated_volume_pld': 120,  # From sewage treatment plant
+                'cost_per_kld': 6,  # Lower cost (already treated)
+                'color': '#9B59B6',  # Purple
+                'emoji': '♻️'
+            }
+        }
+    
+    def get_category_info(self, category_id: str) -> Dict:
+        """
+        Get detailed information about a water category.
+        
+        Args:
+            category_id: 'greywater', 'blackwater', 'industrial_wastewater', 
+                        'rainwater', 'treated_sewage'
+        
+        Returns:
+            Dictionary with complete category information
+        """
+        if category_id not in self.categories:
+            return {'error': f'Category {category_id} not found'}
+        
+        cat = self.categories[category_id]
+        
+        return {
+            'category_id': category_id,
+            'name': cat['name'],
+            'emoji': cat['emoji'],
+            'source': cat['source'],
+            'recyclability': cat['recyclability'],
+            'recyclability_score': cat['recyclability_score'],
+            'treatment_complexity': cat['treatment_complexity'],
+            'reuse_purposes': cat['typical_reuse_purposes'],
+            'recoverable_percentage': round(cat['recoverable_percentage'] * 100, 1),
+            'freshwater_reduction_potential': round(cat['freshwater_demand_reduction'] * 100, 1),
+            'quality_parameters': cat['quality_parameters'],
+            'cost_per_kld': cat['cost_per_kld'],
+            'estimated_daily_volume_pld': cat['estimated_volume_pld']
+        }
+    
+    def get_all_categories(self) -> List[Dict]:
+        """Get summary of all water categories."""
+        summary = []
+        
+        for cat_id in self.categories:
+            cat = self.categories[cat_id]
+            summary.append({
+                'id': cat_id,
+                'name': cat['name'],
+                'emoji': cat['emoji'],
+                'recyclability': cat['recyclability'],
+                'recyclability_score': round(cat['recyclability_score'] * 100, 1),
+                'treatment_difficulty': cat['treatment_complexity'],
+                'freshwater_reduction': round(cat['freshwater_demand_reduction'] * 100, 1),
+                'color': cat['color']
+            })
+        
+        return summary
+    
+    def calculate_recycling_potential(self,
+                                      greywater_volume: float = 0,
+                                      blackwater_volume: float = 0,
+                                      industrial_volume: float = 0,
+                                      rainwater_volume: float = 0,
+                                      treated_sewage_volume: float = 0) -> Dict:
+        """
+        Calculate total recycling potential for mixed water sources.
+        
+        Args:
+            greywater_volume: Greywater available (MLD)
+            blackwater_volume: Blackwater available (MLD)
+            industrial_volume: Industrial wastewater available (MLD)
+            rainwater_volume: Rainwater collected (MLD)
+            treated_sewage_volume: Treated sewage available (MLD)
+        
+        Returns:
+            Dictionary with recycling potential analysis
+        """
+        
+        volumes = {
+            'greywater': greywater_volume,
+            'blackwater': blackwater_volume,
+            'industrial_wastewater': industrial_volume,
+            'rainwater': rainwater_volume,
+            'treated_sewage': treated_sewage_volume
+        }
+        
+        total_input = sum(volumes.values())
+        
+        if total_input == 0:
+            return {'error': 'No water volumes provided'}
+        
+        # Calculate recoverable for each source
+        recoverable = {}
+        freshwater_reduction = {}
+        treatment_cost = {}
+        
+        for source_id, volume in volumes.items():
+            if volume > 0:
+                cat = self.categories[source_id]
+                
+                # Recoverable volume
+                recoverable[source_id] = volume * cat['recoverable_percentage']
+                
+                # Freshwater reduction contribution
+                freshwater_reduction[source_id] = volume * cat['freshwater_demand_reduction']
+                
+                # Treatment cost
+                treatment_cost[source_id] = (volume * 1000) * cat['cost_per_kld']  # Convert MLD to KLD
+        
+        # Total calculations
+        total_recoverable = sum(recoverable.values())
+        total_recovery_rate = (total_recoverable / total_input * 100) if total_input > 0 else 0
+        
+        total_freshwater_reduction = sum(freshwater_reduction.values())
+        total_treatment_cost = sum(treatment_cost.values())
+        
+        # Recyclability weighted score
+        weighted_score = 0
+        for source_id, volume in volumes.items():
+            if volume > 0 and total_input > 0:
+                weight = volume / total_input
+                recyclability = self.categories[source_id]['recyclability_score']
+                weighted_score += weight * recyclability
+        
+        return {
+            'total_input_volume_mld': round(total_input, 2),
+            'total_recoverable_mld': round(total_recoverable, 2),
+            'overall_recovery_rate': round(total_recovery_rate, 1),
+            'overall_recyclability_score': round(weighted_score * 100, 1),
+            'by_source': {
+                source_id: {
+                    'input_mld': round(volume, 2),
+                    'recoverable_mld': round(recoverable.get(source_id, 0), 2),
+                    'recyclability': self.categories[source_id]['recyclability'],
+                    'freshwater_reduction_mld': round(freshwater_reduction.get(source_id, 0), 2)
+                }
+                for source_id, volume in volumes.items() if volume > 0
+            },
+            'total_freshwater_demand_reduction_mld': round(total_freshwater_reduction, 2),
+            'estimated_treatment_cost_inr': round(total_treatment_cost, 2),
+            'cost_per_mld_treated': round(total_treatment_cost / total_input, 2) if total_input > 0 else 0
+        }
+    
+    def generate_recycling_recommendation(self, water_sources: Dict) -> Dict:
+        """
+        Generate prioritized recommendations for water recycling strategy.
+        
+        Args:
+            water_sources: Dict with volumes of each water source
+        
+        Returns:
+            Prioritized list of recycling recommendations
+        """
+        
+        recommendations = []
+        
+        # Rank sources by recyclability score and volume potential
+        ranked_sources = []
+        
+        for source_id, volume in water_sources.items():
+            if volume > 0 and source_id in self.categories:
+                cat = self.categories[source_id]
+                
+                # Score based on recyclability and volume
+                score = (cat['recyclability_score'] * 0.6 + 
+                        (volume / (sum(water_sources.values()) or 1)) * 0.4)
+                
+                ranked_sources.append({
+                    'source_id': source_id,
+                    'name': cat['name'],
+                    'volume': volume,
+                    'priority_score': score,
+                    'recyclability': cat['recyclability'],
+                    'cost_per_kld': cat['cost_per_kld']
+                })
+        
+        # Sort by priority
+        ranked_sources.sort(key=lambda x: x['priority_score'], reverse=True)
+        
+        # Generate recommendations
+        for idx, source in enumerate(ranked_sources, 1):
+            cat = self.categories[source['source_id']]
+            
+            recommendation = {
+                'priority': idx,
+                'source': f"{source['name']} {cat['emoji']}",
+                'volume_available_mld': round(source['volume'], 2),
+                'recyclability': source['recyclability'],
+                'action': self._get_action_for_source(source['source_id']),
+                'expected_recovery_mld': round(source['volume'] * cat['recoverable_percentage'], 2),
+                'freshwater_reduction_potential': round(source['volume'] * cat['freshwater_demand_reduction'], 2),
+                'estimated_cost_inr': round(source['volume'] * 1000 * source['cost_per_kld'], 2),
+                'timeline': self._get_implementation_timeline(source['source_id'])
+            }
+            
+            recommendations.append(recommendation)
+        
+        return {
+            'recommendations': recommendations,
+            'total_volume_to_recycle_mld': round(sum(water_sources.values()), 2),
+            'summary': self._generate_recycling_summary(recommendations)
+        }
+    
+    def calculate_demand_offset(self,
+                               total_freshwater_demand: float,
+                               recycled_water_available: float) -> Dict:
+        """
+        Calculate how recycled water reduces freshwater demand.
+        
+        Args:
+            total_freshwater_demand: Total freshwater needed (MLD)
+            recycled_water_available: Water available from recycling (MLD)
+        
+        Returns:
+            Demand offset analysis
+        """
+        
+        freshwater_after_recycling = max(0, total_freshwater_demand - recycled_water_available)
+        demand_offset_pct = (recycled_water_available / total_freshwater_demand * 100) if total_freshwater_demand > 0 else 0
+        
+        # Environmental impact
+        water_saved_million_liters = recycled_water_available * 1000  # Convert MLD to Million liters
+        carbon_saved_tons = water_saved_million_liters * 0.5  # Rough estimate: 0.5 ton CO2 per million liters
+        energy_saved_kwh = recycled_water_available * 2.5 * 365  # kWh per day × 365 days
+        
+        # Cost comparison
+        cost_freshwater_per_mld = 25  # Typical cost in INR (varies by city)
+        cost_recycled_per_mld = 8    # Typical cost in INR
+        
+        freshwater_cost = total_freshwater_demand * cost_freshwater_per_mld
+        recycled_cost = recycled_water_available * cost_recycled_per_mld
+        freshwater_cost_after = freshwater_after_recycling * cost_freshwater_per_mld
+        
+        total_cost = recycled_cost + freshwater_cost_after
+        cost_savings = freshwater_cost - total_cost
+        
+        return {
+            'freshwater_demand_original_mld': round(total_freshwater_demand, 2),
+            'recycled_water_used_mld': round(recycled_water_available, 2),
+            'freshwater_demand_after_recycling_mld': round(freshwater_after_recycling, 2),
+            'demand_offset_percentage': round(demand_offset_pct, 1),
+            'environmental_impact': {
+                'water_saved_million_liters': round(water_saved_million_liters, 2),
+                'co2_emissions_avoided_tons': round(carbon_saved_tons, 2),
+                'energy_saved_kwh': round(energy_saved_kwh, 2)
+            },
+            'financial_analysis': {
+                'original_freshwater_cost_inr': round(freshwater_cost, 2),
+                'recycled_water_total_cost_inr': round(total_cost, 2),
+                'annual_cost_savings_inr': round(cost_savings * 365, 2),
+                'cost_reduction_percentage': round((cost_savings / freshwater_cost * 100) if freshwater_cost > 0 else 0, 1)
+            }
+        }
+    
+    def _get_action_for_source(self, source_id: str) -> str:
+        """Get recommended action for a specific water source."""
+        actions = {
+            'greywater': 'Install greywater recycling systems in buildings (showers, sinks)',
+            'blackwater': 'Connect to sewage treatment plant with advanced processing',
+            'industrial_wastewater': 'Install on-site treatment and closed-loop recycling systems',
+            'rainwater': 'Install rainwater harvesting and storage infrastructure',
+            'treated_sewage': 'Integrate treated sewage into irrigation and non-potable uses'
+        }
+        return actions.get(source_id, 'Implement recycling system')
+    
+    def _get_implementation_timeline(self, source_id: str) -> str:
+        """Get typical implementation timeline."""
+        timelines = {
+            'rainwater': '3-6 months',
+            'greywater': '6-12 months',
+            'treated_sewage': '12-18 months',
+            'industrial_wastewater': '12-24 months',
+            'blackwater': '18-36 months'
+        }
+        return timelines.get(source_id, '12 months')
+    
+    def _generate_recycling_summary(self, recommendations: List[Dict]) -> str:
+        """Generate text summary of recycling strategy."""
+        total_volume = sum(r['volume_available_mld'] for r in recommendations)
+        total_recovery = sum(r['expected_recovery_mld'] for r in recommendations)
+        total_freshwater_reduction = sum(r['freshwater_reduction_potential'] for r in recommendations)
+        
+        summary = (
+            f"Total recyclable water: {total_volume:.1f} MLD | "
+            f"Expected recovery: {total_recovery:.1f} MLD | "
+            f"Freshwater reduction: {total_freshwater_reduction:.1f} MLD | "
+            f"Top priority: {recommendations[0]['source'] if recommendations else 'None'}"
+        )
+        
+        return summary
 
 
 if __name__ == '__main__':

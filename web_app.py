@@ -1,11 +1,3 @@
-"""
-Water Demand Forecasting Web Application
-=========================================
-A working Flask web app for forecasting water demand and running scenarios.
-
-Run with: python web_app.py
-Then visit: http://localhost:5000
-"""
 
 from flask import Flask, render_template, request, jsonify
 from forecasting_engine import (
@@ -15,7 +7,9 @@ from forecasting_engine import (
     ForecastEvaluator,
     ScenarioSimulator,
     WaterDistributionRecommender,
-    WaterRiskAlertManager
+    WaterRiskAlertManager,
+    WaterRecyclingClassifier,
+    WaterRecyclingLogger
 )
 import numpy as np
 import pandas as pd
@@ -24,19 +18,17 @@ import json
 
 app = Flask(__name__)
 
-# ============================================================================
-# GLOBAL STATE - In-memory forecasting service
-# ============================================================================
-
 forecasting_service = None
 scenario_simulator = None
 distribution_recommender = None
 alert_manager = None
+recycling_classifier = None
+recycling_logger = None
 latest_forecast = None
 
 def initialize_service():
     """Initialize the forecasting service with synthetic data on startup."""
-    global forecasting_service, scenario_simulator, distribution_recommender, alert_manager
+    global forecasting_service, scenario_simulator, distribution_recommender, alert_manager, recycling_classifier, recycling_logger
     
     print("🔄 Initializing forecasting service...")
     
@@ -113,6 +105,12 @@ def initialize_service():
     
     # Initialize alert manager
     alert_manager = WaterRiskAlertManager()
+    
+    # Initialize recycling classifier
+    recycling_classifier = WaterRecyclingClassifier()
+    
+    # Initialize recycling logger
+    recycling_logger = WaterRecyclingLogger()
     
     return True
 
@@ -666,6 +664,236 @@ def comprehensive_alert_report():
             'stress_index': stress_result['stress_index'],
             'alert_level': stress_result['alert_level'],
             'shortage_risk': shortage_forecast['shortage_risk_level']
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# RECYCLING CLASSIFICATION ENDPOINTS
+# ============================================================================
+
+@app.route('/api/recycling/categories', methods=['GET'])
+def get_recycling_categories():
+    """Get all water recycling categories."""
+    try:
+        if recycling_classifier is None:
+            return jsonify({'error': 'Recycling system not initialized'}), 500
+        
+        categories = recycling_classifier.get_all_categories()
+        
+        return jsonify({
+            'status': 'success',
+            'categories': categories,
+            'total_categories': len(categories)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/category/<category_id>', methods=['GET'])
+def get_category_details(category_id):
+    """Get detailed information about a specific water category."""
+    try:
+        if recycling_classifier is None:
+            return jsonify({'error': 'Recycling system not initialized'}), 500
+        
+        info = recycling_classifier.get_category_info(category_id)
+        
+        return jsonify({
+            'status': 'success',
+            'category': info
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/potential', methods=['POST'])
+def calculate_recycling_potential():
+    """Calculate total recycling potential from mixed water sources."""
+    try:
+        if recycling_classifier is None:
+            return jsonify({'error': 'Recycling system not initialized'}), 500
+        
+        data = request.json
+        
+        potential = recycling_classifier.calculate_recycling_potential(
+            greywater_volume=data.get('greywater_volume', 0),
+            blackwater_volume=data.get('blackwater_volume', 0),
+            industrial_volume=data.get('industrial_volume', 0),
+            rainwater_volume=data.get('rainwater_volume', 0),
+            treated_sewage_volume=data.get('treated_sewage_volume', 0)
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'recycling_potential': potential
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/recommendations', methods=['POST'])
+def get_recycling_recommendations():
+    """Get prioritized recycling recommendations."""
+    try:
+        if recycling_classifier is None:
+            return jsonify({'error': 'Recycling system not initialized'}), 500
+        
+        data = request.json
+        
+        water_sources = {
+            'greywater': data.get('greywater_volume', 0),
+            'blackwater': data.get('blackwater_volume', 0),
+            'industrial_wastewater': data.get('industrial_volume', 0),
+            'rainwater': data.get('rainwater_volume', 0),
+            'treated_sewage': data.get('treated_sewage_volume', 0)
+        }
+        
+        recommendations = recycling_classifier.generate_recycling_recommendation(water_sources)
+        
+        return jsonify({
+            'status': 'success',
+            'recycling_strategy': recommendations
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/demand-offset', methods=['POST'])
+def calculate_demand_offset():
+    """Calculate freshwater demand reduction from recycling."""
+    try:
+        if recycling_classifier is None:
+            return jsonify({'error': 'Recycling system not initialized'}), 500
+        
+        data = request.json
+        
+        offset = recycling_classifier.calculate_demand_offset(
+            total_freshwater_demand=data.get('total_demand_mld', 150.0),
+            recycled_water_available=data.get('recycled_water_mld', 30.0)
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'demand_offset_analysis': offset
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# RECYCLING LOGGING ENDPOINTS
+# ============================================================================
+
+@app.route('/api/recycling/log', methods=['POST'])
+def log_recycling_activity():
+    """Log a water recycling activity with validation."""
+    try:
+        if recycling_logger is None:
+            return jsonify({'error': 'Recycling logger not initialized'}), 500
+        
+        data = request.json
+        
+        result = recycling_logger.log_recycling_activity(
+            water_type=data.get('water_type'),
+            volume_liters=data.get('volume_liters'),
+            source=data.get('source'),
+            method=data.get('method'),
+            ward_id=data.get('ward_id'),
+            zone_id=data.get('zone_id'),
+            user_id=data.get('user_id'),
+            notes=data.get('notes', '')
+        )
+        
+        status_code = 200 if result.get('accepted') else 400
+        return jsonify(result), status_code
+    
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'}), 500
+
+@app.route('/api/recycling/stats/ward/<ward_id>', methods=['GET'])
+def get_ward_statistics(ward_id):
+    """Get recycling statistics for a specific ward."""
+    try:
+        if recycling_logger is None:
+            return jsonify({'error': 'Recycling logger not initialized'}), 500
+        
+        stats = recycling_logger.get_ward_statistics(ward_id)
+        
+        return jsonify({
+            'status': 'success',
+            'ward_statistics': stats
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/stats/zone/<zone_id>', methods=['GET'])
+def get_zone_statistics(zone_id):
+    """Get recycling statistics for a zone (all wards combined)."""
+    try:
+        if recycling_logger is None:
+            return jsonify({'error': 'Recycling logger not initialized'}), 500
+        
+        stats = recycling_logger.get_zone_statistics(zone_id)
+        
+        return jsonify({
+            'status': 'success',
+            'zone_statistics': stats
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/leaderboard', methods=['GET'])
+def get_leaderboard():
+    """Get top recycling contributors (community leaderboard)."""
+    try:
+        if recycling_logger is None:
+            return jsonify({'error': 'Recycling logger not initialized'}), 500
+        
+        limit = request.args.get('limit', 10, type=int)
+        leaderboard = recycling_logger.get_user_leaderboard(limit=limit)
+        
+        return jsonify({
+            'status': 'success',
+            'leaderboard': leaderboard
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/recent-entries', methods=['GET'])
+def get_recent_entries():
+    """Get most recent recycling log entries."""
+    try:
+        if recycling_logger is None:
+            return jsonify({'error': 'Recycling logger not initialized'}), 500
+        
+        limit = request.args.get('limit', 20, type=int)
+        entries = recycling_logger.get_recent_entries(limit=limit)
+        
+        return jsonify({
+            'status': 'success',
+            'recent_entries': entries
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recycling/system-stats', methods=['GET'])
+def get_system_statistics():
+    """Get overall system-wide recycling statistics."""
+    try:
+        if recycling_logger is None:
+            return jsonify({'error': 'Recycling logger not initialized'}), 500
+        
+        stats = recycling_logger.get_system_statistics()
+        
+        return jsonify({
+            'status': 'success',
+            'system_statistics': stats
         })
     
     except Exception as e:

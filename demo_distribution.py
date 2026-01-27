@@ -1,39 +1,23 @@
-"""
-Water Distribution Recommendation Engine - Interactive Demo
-===========================================================
-
-This script demonstrates the water distribution engine with realistic scenarios.
-
-Run with: python demo_distribution.py
-"""
-
 from forecasting_engine import WaterDistributionRecommender
 from datetime import datetime
 import json
 
-
 def print_header(title):
-    """Print formatted section header."""
     print("\n" + "=" * 80)
     print(f"  {title}")
     print("=" * 80 + "\n")
 
-
 def print_subheader(title):
-    """Print formatted subsection."""
     print(f"\n─── {title} ───\n")
 
 
 def demo_initialization():
-    """Demo 1: Initialize the distribution recommender with zones."""
     print_header("DEMO 1: INITIALIZATION & ZONE SETUP")
     
-    # Initialize recommender
     print("Creating WaterDistributionRecommender...")
     recommender = WaterDistributionRecommender()
     print("✅ Created\n")
     
-    # Add zones
     print("Adding zones to distribution network:\n")
     
     zones_to_add = [
@@ -52,9 +36,7 @@ def demo_initialization():
     
     return recommender
 
-
 def demo_normal_conditions(recommender):
-    """Demo 2: Normal supply conditions (no shortage)."""
     print_header("DEMO 2: NORMAL CONDITIONS")
     
     print("SCENARIO: No drought, no heatwave, supply sufficient")
@@ -65,7 +47,6 @@ def demo_normal_conditions(recommender):
     print("  Safety Buffer:     50 MLD (10% of 500 MLD capacity)")
     print("─" * 80 + "\n")
     
-    # Step 1: Release recommendation
     release = recommender.recommend_daily_release(
         forecasted_demand_mld=140.0,
         reservoir_capacity_mld=500.0,
@@ -82,7 +63,6 @@ def demo_normal_conditions(recommender):
     print(f"  Storage Health:    {release['storage_health']}")
     print(f"  Days to Empty:     {release['days_to_empty_at_current_rate']}")
     
-    # Step 2: Zone allocation
     zone_demands = {
         'HOSPITAL_ZONE': 6.0,
         'RESIDENTIAL_A': 40.0,
@@ -115,7 +95,6 @@ def demo_normal_conditions(recommender):
     print(f"Shortage:          {allocation['shortage_percentage']}%")
     print(f"Status:            {allocation['shortage_status']}")
     
-    # Step 3: Rationing schedule
     rationing = recommender.calculate_rationing_schedule(allocation['shortage_percentage'])
     
     print_subheader("RATIONING SCHEDULE")
@@ -128,9 +107,7 @@ def demo_normal_conditions(recommender):
     print("✓ No public announcements needed")
     print("✓ Continue normal monitoring")
 
-
 def demo_mild_shortage(recommender):
-    """Demo 3: Mild shortage from heatwave."""
     print_header("DEMO 3: MILD SHORTAGE (HEATWAVE)")
     
     print("SCENARIO: Heatwave + 10% demand increase, storage adequate")
@@ -142,7 +119,6 @@ def demo_mild_shortage(recommender):
     print("  Safety Buffer:     50 MLD (protected)")
     print("─" * 80 + "\n")
     
-    # Step 1: Release recommendation
     release = recommender.recommend_daily_release(
         forecasted_demand_mld=160.0,
         reservoir_capacity_mld=500.0,
@@ -156,12 +132,11 @@ def demo_mild_shortage(recommender):
     print(f"  Reason:            {release['reason']}")
     print(f"  Storage Health:    {release['storage_health']}")
     print(f"  ⚠️  WARNING: Demand exceeds supply by 5 MLD/day")
-    
-    # Step 2: Zone allocation with shortage
+
     zone_demands = {
         'HOSPITAL_ZONE': 6.0,
-        'RESIDENTIAL_A': 42.0,        # +5% due to heat
-        'RESIDENTIAL_B': 38.0,        # +8% due to heat
+        'RESIDENTIAL_A': 42.0,        
+        'RESIDENTIAL_B': 38.0,        
         'COMMERCIAL': 25.0,
         'INDUSTRIAL': 35.0
     }
@@ -189,7 +164,6 @@ def demo_mild_shortage(recommender):
     print(f"🔴 Total Shortage: {allocation['total_shortage_mld']} MLD ({allocation['shortage_percentage']:.1f}%)")
     print(f"Status:            {allocation['shortage_status']}")
     
-    # Step 3: Rationing
     rationing = recommender.calculate_rationing_schedule(allocation['shortage_percentage'])
     
     print_subheader("RATIONING SCHEDULE")
@@ -216,7 +190,6 @@ def demo_mild_shortage(recommender):
 
 
 def demo_severe_shortage(recommender):
-    """Demo 4: Severe shortage from drought."""
     print_header("DEMO 4: SEVERE SHORTAGE (DROUGHT)")
     
     print("SCENARIO: Monsoon failure, storage critically low, demand high")
@@ -228,7 +201,6 @@ def demo_severe_shortage(recommender):
     print("  Safety Buffer:     50 MLD (must protect)")
     print("─" * 80 + "\n")
     
-    # Step 1: Release recommendation
     release = recommender.recommend_daily_release(
         forecasted_demand_mld=175.0,
         reservoir_capacity_mld=500.0,
@@ -244,7 +216,6 @@ def demo_severe_shortage(recommender):
     print(f"  Days to Empty:     {release['days_to_empty_at_current_rate']}")
     print(f"  ⚠️  CRITICAL: Less than 1 day of supply remaining!")
     
-    # Step 2: Zone allocation with severe shortage
     zone_demands = {
         'HOSPITAL_ZONE': 6.0,
         'RESIDENTIAL_A': 45.0,
@@ -276,7 +247,6 @@ def demo_severe_shortage(recommender):
     print(f"🔴 Total Shortage: {allocation['total_shortage_mld']} MLD ({allocation['shortage_percentage']:.1f}%)")
     print(f"Status:            {allocation['shortage_status']}")
     
-    # Step 3: Severe rationing
     rationing = recommender.calculate_rationing_schedule(allocation['shortage_percentage'])
     
     print_subheader("EMERGENCY RATIONING SCHEDULE")
@@ -320,9 +290,7 @@ def demo_severe_shortage(recommender):
     print("  • Residential: Mandatory conservation (essential uses only)")
     print("  • Health system: Adequate water guaranteed for hospitals/clinics")
 
-
 def demo_combined_analysis():
-    """Demo 5: Detailed analysis of a complex real-world scenario."""
     print_header("DEMO 5: REAL-WORLD SCENARIO ANALYSIS")
     
     rec = WaterDistributionRecommender()
@@ -341,7 +309,6 @@ def demo_combined_analysis():
     print("  • Current storage: 250 MLD (capacity reduced to 350 for maintenance)")
     print("─" * 80 + "\n")
     
-    # Multi-step decision process
     print("DECISION PROCESS:\n")
     
     print("Step 1: Check if minimum needs can be met")
@@ -356,9 +323,9 @@ def demo_combined_analysis():
     print("Step 2: Get release recommendation")
     release = rec.recommend_daily_release(
         forecasted_demand_mld=185.0,
-        reservoir_capacity_mld=350.0,  # Reduced due to maintenance
+        reservoir_capacity_mld=350.0,  
         current_storage_mld=250.0,
-        max_daily_supply_mld=165.0  # Treatment bottleneck
+        max_daily_supply_mld=165.0  
     )
     print(f"  Release: {release['recommended_release_mld']} MLD (max capacity)")
     print(f"  Status: {release['status']}")
@@ -367,11 +334,11 @@ def demo_combined_analysis():
     
     print("Step 3: Allocate considering festival surge")
     zone_demands = {
-        'HOSPITAL': 7.0,              # Festival extra = +1
-        'RESIDENTIAL_A': 48.0,        # Festival + heat = +8
-        'RESIDENTIAL_B': 43.0,        # Festival + heat = +8
-        'COMMERCIAL': 28.0,           # Festival = +3
-        'INDUSTRIAL': 30.0            # Reduced (contract signed)
+        'HOSPITAL': 7.0,              
+        'RESIDENTIAL_A': 48.0,       
+        'RESIDENTIAL_B': 43.0,        
+        'COMMERCIAL': 28.0,           
+        'INDUSTRIAL': 30.0            
     }
     
     allocation = rec.allocate_to_zones(
@@ -402,7 +369,6 @@ def demo_combined_analysis():
 
 
 def main():
-    """Run all demos."""
     print("\n" + "=" * 80)
     print("WATER DISTRIBUTION RECOMMENDATION ENGINE - INTERACTIVE DEMONSTRATION")
     print("=" * 80)
@@ -413,26 +379,20 @@ def main():
     print("  • Rationing plans")
     print("  • Operator recommendations")
     
-    # Demo 1: Initialization
     recommender = demo_initialization()
     
-    # Demo 2: Normal conditions
     input("\n⏸️  Press Enter to see DEMO 2: Normal Conditions...")
     demo_normal_conditions(recommender)
     
-    # Demo 3: Mild shortage
     input("\n⏸️  Press Enter to see DEMO 3: Mild Shortage (Heatwave)...")
     demo_mild_shortage(recommender)
-    
-    # Demo 4: Severe shortage
+
     input("\n⏸️  Press Enter to see DEMO 4: Severe Shortage (Drought)...")
     demo_severe_shortage(recommender)
-    
-    # Demo 5: Complex scenario
+
     input("\n⏸️  Press Enter to see DEMO 5: Complex Real-World Scenario...")
     demo_combined_analysis()
     
-    # Summary
     print_header("SUMMARY")
     print("✅ The Water Distribution Recommendation Engine successfully:")
     print("  • Evaluated 4 different shortage scenarios")
@@ -449,7 +409,6 @@ def main():
     print("For API usage, see: DISTRIBUTION_QUICK_REFERENCE.md")
     print("For full documentation, see: DISTRIBUTION_ENGINE_GUIDE.md")
     print("=" * 80 + "\n")
-
 
 if __name__ == '__main__':
     main()

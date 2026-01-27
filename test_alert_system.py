@@ -1,17 +1,11 @@
-"""Test script for Water Risk Alert Manager"""
-
 from forecasting_engine import WaterRiskAlertManager
 import json
-
 print("\n" + "="*70)
 print("WATER RISK ALERT MANAGER - FUNCTIONAL TEST")
 print("="*70)
-
-# Initialize manager
 alert_manager = WaterRiskAlertManager()
 print("\n✅ WaterRiskAlertManager initialized successfully")
 
-# Test 1: Compute stress index
 print("\n" + "-"*70)
 print("TEST 1: Water Stress Index Calculation")
 print("-"*70)
@@ -35,7 +29,6 @@ print(f"Metrics:")
 print(f"  - Days to Empty: {result['metrics']['days_to_empty']:.1f}")
 print(f"  - Storage Ratio: {result['metrics']['storage_ratio']:.1%}")
 
-# Test 2: Predict shortages
 print("\n" + "-"*70)
 print("TEST 2: 7-Day Shortage Prediction")
 print("-"*70)
@@ -55,7 +48,6 @@ for day in shortage_forecast['daily_forecasts'][:3]:  # Show first 3 days
     print(f"  Day {day['day']}: Demand={day['forecasted_demand']:.1f}, "
           f"Supply={day['available_supply']:.1f}, Status={day['status']}")
 
-# Test 3: Generate alert message
 print("\n" + "-"*70)
 print("TEST 3: Alert Message Generation")
 print("-"*70)
@@ -74,7 +66,6 @@ print(f"Recommended Actions ({len(alert['recommended_actions'])}):")
 for i, action in enumerate(alert['recommended_actions'][:3], 1):
     print(f"  {i}. {action}")
 
-# Test 4: Different alert levels
 print("\n" + "-"*70)
 print("TEST 4: Testing All Alert Levels")
 print("-"*70)
@@ -91,7 +82,6 @@ for scenario in test_scenarios:
     status = "✅ PASS" if level == scenario['expected'] else "❌ FAIL"
     print(f"{status} Stress {scenario['stress']}: {level.upper()} (expected {scenario['expected'].upper()})")
 
-# Test 5: Comprehensive report
 print("\n" + "-"*70)
 print("TEST 5: Comprehensive Alert Report")
 print("-"*70)
