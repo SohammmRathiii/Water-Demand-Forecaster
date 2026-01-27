@@ -2431,5 +2431,468 @@ class WaterDistributionRecommender:
             return '💧 FULL'
 
 
+# ============================================================================
+# 8. WATER RISK AND ALERT MANAGEMENT SYSTEM
+# ============================================================================
+
+class WaterRiskAlertManager:
+    """
+    Water Risk and Alert Management System
+    ======================================
+    
+    Purpose:
+    --------
+    Provides early warning of water shortages, calculates risk index,
+    and generates actionable alerts for 3-7 days in advance.
+    
+    Key Metrics:
+    - Water Stress Index (0-100): Overall water availability stress
+    - Alert Levels: Green, Yellow, Orange, Red
+    - Forecast Window: 3-7 days ahead
+    - Risk Factors: Demand, supply, storage, trends
+    """
+    
+    def __init__(self):
+        """Initialize risk alert manager."""
+        self.alert_history = []
+        self.stress_index_history = []
+        
+        # Alert thresholds (Water Stress Index)
+        self.thresholds = {
+            'green': (0, 35),           # 0-35: Safe, ample supply
+            'yellow': (35, 50),         # 35-50: Watch, monitor closely
+            'orange': (50, 75),         # 50-75: Prepare, restrictions likely
+            'red': (75, 100)            # 75-100: Critical, emergency
+        }
+        
+        # Alert configuration
+        self.alert_levels = {
+            'green': {'emoji': '🟢', 'severity': 0, 'name': 'SAFE'},
+            'yellow': {'emoji': '🟡', 'severity': 1, 'name': 'WATCH'},
+            'orange': {'emoji': '🟠', 'severity': 2, 'name': 'PREPARE'},
+            'red': {'emoji': '🔴', 'severity': 3, 'name': 'CRITICAL'}
+        }
+    
+    def compute_water_stress_index(self,
+                                   forecasted_demand_mld: float,
+                                   current_storage_mld: float,
+                                   reservoir_capacity_mld: float,
+                                   max_daily_supply_mld: float,
+                                   actual_inflow_mld: float = 0,
+                                   trend_days: int = 7) -> Dict:
+        """
+        Compute Water Stress Index (0-100).
+        
+        Formula incorporates:
+        1. Supply-Demand Ratio (40% weight)
+        2. Storage Level (30% weight)
+        3. Trend (20% weight)
+        4. Buffer Safety (10% weight)
+        
+        Args:
+            forecasted_demand_mld: Expected demand (MLD)
+            current_storage_mld: Current water in reservoir (MLD)
+            reservoir_capacity_mld: Total capacity (MLD)
+            max_daily_supply_mld: Maximum daily supply (MLD)
+            actual_inflow_mld: Current water inflow (MLD)
+            trend_days: Days to calculate trend (default 7)
+        
+        Returns:
+            Dictionary with stress index and component breakdown
+        """
+        
+        # COMPONENT 1: Supply-Demand Ratio (40% weight)
+        # Measures: Can we meet demand with current supply?
+        available_supply = min(max_daily_supply_mld, current_storage_mld + actual_inflow_mld)
+        if forecasted_demand_mld > 0:
+            supply_ratio = available_supply / forecasted_demand_mld
+        else:
+            supply_ratio = 1.0
+        
+        # Convert ratio to stress (lower supply relative to demand = higher stress)
+        # supply_ratio > 1.0 = surplus (low stress)
+        # supply_ratio = 0.5 = 50% shortage (high stress)
+        supply_stress = max(0, min(100, (1.0 - supply_ratio) * 100))
+        
+        # COMPONENT 2: Storage Level (30% weight)
+        # Measures: How much water is left in reserve?
+        storage_ratio = current_storage_mld / reservoir_capacity_mld if reservoir_capacity_mld > 0 else 0
+        
+        # Convert storage to stress (lower storage = higher stress)
+        # 100% full = 0 stress
+        # 0% empty = 100 stress
+        # Below 10% = critical stress
+        if storage_ratio < 0.10:
+            storage_stress = 90 + (10 * (0.10 - storage_ratio) / 0.10)  # 90-100
+        elif storage_ratio < 0.25:
+            storage_stress = 75 + (15 * (0.25 - storage_ratio) / 0.15)  # 75-90
+        elif storage_ratio < 0.5:
+            storage_stress = 40 + (35 * (0.5 - storage_ratio) / 0.25)   # 40-75
+        else:
+            storage_stress = 40 * (1.0 - storage_ratio)                  # 0-40
+        
+        # COMPONENT 3: Trend (20% weight)
+        # Measures: Is storage increasing or decreasing?
+        # Positive trend (refilling) = lower stress
+        # Negative trend (depleting) = higher stress
+        daily_change = (actual_inflow_mld - forecasted_demand_mld)
+        days_to_empty = current_storage_mld / (forecasted_demand_mld + 0.01) if forecasted_demand_mld > 0 else float('inf')
+        
+        if days_to_empty < 7:
+            trend_stress = 80  # Critical trend
+        elif days_to_empty < 14:
+            trend_stress = 60  # Concerning trend
+        elif days_to_empty < 30:
+            trend_stress = 40  # Moderate trend
+        elif daily_change > 0:
+            trend_stress = 10  # Positive trend (refilling)
+        else:
+            trend_stress = 30  # Slight negative trend
+        
+        # COMPONENT 4: Buffer Safety (10% weight)
+        # Measures: Are we protecting the safety buffer?
+        safety_buffer = 0.10 * reservoir_capacity_mld
+        if current_storage_mld < safety_buffer:
+            buffer_stress = 100  # Critical - below buffer
+        else:
+            remaining_usable = current_storage_mld - safety_buffer
+            # Stress based on how much buffer room we have
+            buffer_stress = max(0, 50 - (remaining_usable / reservoir_capacity_mld) * 100)
+        
+        # WEIGHTED COMBINATION
+        stress_index = (
+            supply_stress * 0.40 +
+            storage_stress * 0.30 +
+            trend_stress * 0.20 +
+            buffer_stress * 0.10
+        )
+        
+        # Cap between 0-100
+        stress_index = max(0, min(100, stress_index))
+        
+        # Determine alert level
+        alert_level = self._get_alert_level(stress_index)
+        
+        return {
+            'stress_index': round(stress_index, 2),
+            'alert_level': alert_level,
+            'component_breakdown': {
+                'supply_stress': round(supply_stress, 2),
+                'storage_stress': round(storage_stress, 2),
+                'trend_stress': round(trend_stress, 2),
+                'buffer_stress': round(buffer_stress, 2)
+            },
+            'metrics': {
+                'supply_ratio': round(supply_ratio, 3),
+                'storage_ratio': round(storage_ratio, 3),
+                'days_to_empty': round(days_to_empty, 1),
+                'daily_change_mld': round(daily_change, 2)
+            }
+        }
+    
+    def predict_shortages_forward(self,
+                                  current_storage_mld: float,
+                                  forecasted_demands: List[float],
+                                  forecasted_inflows: List[float] = None,
+                                  max_daily_supply_mld: float = 165.0) -> Dict:
+        """
+        Predict water shortages 3-7 days in advance.
+        
+        Args:
+            current_storage_mld: Current storage level (MLD)
+            forecasted_demands: List of daily demands (7 days forward)
+            forecasted_inflows: List of daily inflows (7 days forward)
+            max_daily_supply_mld: Maximum supply capacity (MLD)
+        
+        Returns:
+            Dictionary with day-by-day shortage forecast
+        """
+        
+        if forecasted_inflows is None:
+            # If no inflow forecast, assume zero
+            forecasted_inflows = [0.0] * len(forecasted_demands)
+        
+        storage = current_storage_mld
+        daily_forecasts = []
+        shortage_days = []
+        
+        for day in range(min(7, len(forecasted_demands))):
+            demand = forecasted_demands[day]
+            inflow = forecasted_inflows[day] if day < len(forecasted_inflows) else 0.0
+            
+            # Available supply = min(physical capacity, storage + inflow)
+            available = min(max_daily_supply_mld, storage + inflow)
+            
+            # Calculate shortage
+            if demand > available:
+                shortage = demand - available
+                shortage_pct = (shortage / demand) * 100
+                status = 'SHORTAGE'
+            else:
+                shortage = 0
+                shortage_pct = 0
+                status = 'ADEQUATE'
+            
+            # Update storage for next day
+            # (actual release = available supply, not demand)
+            storage = max(0, storage + inflow - available)
+            
+            # Determine alert for this day
+            alert = self._get_shortage_alert(shortage_pct, storage)
+            
+            daily_forecasts.append({
+                'day': day + 1,
+                'forecasted_demand': round(demand, 2),
+                'expected_inflow': round(inflow, 2),
+                'available_supply': round(available, 2),
+                'shortage_mld': round(shortage, 2),
+                'shortage_pct': round(shortage_pct, 1),
+                'projected_storage_eod': round(storage, 2),
+                'status': status,
+                'alert': alert
+            })
+            
+            # Track days with shortages
+            if shortage > 0:
+                shortage_days.append(day + 1)
+        
+        # Determine overall 7-day outlook
+        max_shortage = max([f['shortage_pct'] for f in daily_forecasts], default=0)
+        shortage_risk = 'NONE'
+        if max_shortage > 0 and max_shortage < 10:
+            shortage_risk = 'LOW'
+        elif max_shortage >= 10 and max_shortage < 25:
+            shortage_risk = 'MODERATE'
+        elif max_shortage >= 25:
+            shortage_risk = 'HIGH'
+        
+        return {
+            'forecast_window_days': 7,
+            'current_storage': current_storage_mld,
+            'shortage_risk_level': shortage_risk,
+            'days_with_shortage': shortage_days,
+            'max_shortage_pct': round(max_shortage, 1),
+            'daily_forecasts': daily_forecasts,
+            'summary': (
+                f"Shortage expected on days: {shortage_days or 'None'} " +
+                f"(max {round(max_shortage, 1)}% shortage)"
+            )
+        }
+    
+    def generate_alert_message(self,
+                              stress_index: float,
+                              alert_level: str,
+                              forecasted_shortage_pct: float,
+                              days_to_critical: int = None,
+                              zone_impacts: Dict = None) -> Dict:
+        """
+        Generate alert message with recommended actions.
+        
+        Args:
+            stress_index: Current water stress (0-100)
+            alert_level: 'green', 'yellow', 'orange', 'red'
+            forecasted_shortage_pct: Expected shortage % in 7 days
+            days_to_critical: Days until critical (if applicable)
+            zone_impacts: Dict of zone impacts
+        
+        Returns:
+            Alert message with emoji, severity, description, actions
+        """
+        
+        alert_info = self.alert_levels.get(alert_level, self.alert_levels['yellow'])
+        
+        # Alert message (escalates with severity)
+        if alert_level == 'green':
+            headline = "SAFE: Water supply adequate"
+            description = f"Current stress index {stress_index:.0f}/100 indicates healthy water availability."
+            public_message = "Water supply is sufficient. Continue normal usage."
+            actions = [
+                "Monitor daily stress index",
+                "Maintain regular monitoring schedule",
+                "Update public dashboard"
+            ]
+            duration = "Ongoing"
+        
+        elif alert_level == 'yellow':
+            headline = "WATCH: Monitor water situation closely"
+            description = f"Stress index {stress_index:.0f}/100 shows potential issues ahead."
+            public_message = "Please conserve water. Reduce non-essential use."
+            actions = [
+                "Increase monitoring frequency (every 6 hours)",
+                "Prepare contingency plans",
+                "Alert stakeholders to watch alert",
+                "Request voluntary conservation from public",
+                "Check equipment and backup systems"
+            ]
+            duration = "24-72 hours (or until conditions improve)"
+        
+        elif alert_level == 'orange':
+            headline = "PREPARE: Shortages likely within 3-7 days"
+            description = f"Stress index {stress_index:.0f}/100 indicates significant shortage risk."
+            public_message = "Rationing may be required. Prepare now."
+            actions = [
+                "Activate emergency response team",
+                "Implement mandatory conservation measures",
+                "Begin rationing schedule",
+                "Deploy mobile water tankers to deficient zones",
+                "Activate recycled water facilities (if available)",
+                "Issue official shortage notice to all sectors",
+                "Monitor hourly and adjust release strategy"
+            ]
+            duration = "3-7 days expected"
+        
+        else:  # red
+            headline = "CRITICAL: Emergency water shortage"
+            description = f"Stress index {stress_index:.0f}/100 - Critical shortage in progress."
+            public_message = "EMERGENCY: Use water only for essential needs (drinking, cooking, sanitation)."
+            actions = [
+                "DECLARE WATER EMERGENCY immediately",
+                "Implement severe rationing (4-8 hour daily cutoffs)",
+                "Deploy all mobile water tanker resources",
+                "Activate desalination at maximum capacity",
+                "Implement voluntary industry shutdowns",
+                "Close non-essential public water use (fountains, etc.)",
+                "Coordinate with neighboring utilities for emergency supply",
+                "Brief emergency operations center hourly",
+                "Alert hospitals and critical services of status"
+            ]
+            duration = "Ongoing crisis - continuous monitoring"
+        
+        # Calculate time to crisis if provided
+        time_to_critical_text = ""
+        if days_to_critical is not None and days_to_critical > 0:
+            if days_to_critical == 1:
+                time_to_critical_text = "Crisis expected within 24 hours."
+            elif days_to_critical <= 3:
+                time_to_critical_text = f"Crisis expected in {days_to_critical} days."
+            else:
+                time_to_critical_text = f"Crisis possible in {days_to_critical} days if trend continues."
+        
+        # Zone impacts (if provided)
+        zone_impact_text = ""
+        if zone_impacts:
+            affected_zones = [z for z, impact in zone_impacts.items() if impact > 0]
+            if affected_zones:
+                zone_impact_text = f"\nZones affected: {', '.join(affected_zones)}"
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'alert_level': alert_level,
+            'severity_number': alert_info['severity'],  # 0=green, 1=yellow, 2=orange, 3=red
+            'emoji': alert_info['emoji'],
+            'name': alert_info['name'],
+            'stress_index': round(stress_index, 2),
+            'headline': f"{alert_info['emoji']} {headline}",
+            'description': description,
+            'public_message': public_message,
+            'time_to_critical': time_to_critical_text,
+            'zone_impacts': zone_impact_text,
+            'recommended_actions': actions,
+            'duration': duration,
+            'forecasted_shortage_pct': round(forecasted_shortage_pct, 1),
+            'alert_text': (
+                f"\n{alert_info['emoji']} {headline}\n" +
+                f"Stress Index: {stress_index:.0f}/100\n" +
+                f"Description: {description}\n" +
+                f"{time_to_critical_text}\n" +
+                f"Expected Duration: {duration}\n" +
+                f"Public Message: {public_message}\n" +
+                f"\nRecommended Actions:\n" +
+                "\n".join([f"  {i+1}. {action}" for i, action in enumerate(actions)])
+            )
+        }
+    
+    def generate_comprehensive_alert_report(self,
+                                           stress_index: float,
+                                           shortage_forecast: Dict,
+                                           zone_allocations: Dict = None) -> str:
+        """
+        Generate comprehensive alert report for decision makers.
+        
+        Args:
+            stress_index: Water stress index (0-100)
+            shortage_forecast: Output from predict_shortages_forward()
+            zone_allocations: Optional zone allocation info
+        
+        Returns:
+            Formatted alert report string
+        """
+        
+        alert_level = self._get_alert_level(stress_index)
+        alert_info = self.alert_levels[alert_level]
+        
+        report = []
+        report.append("\n" + "=" * 80)
+        report.append("WATER RISK AND ALERT REPORT")
+        report.append("=" * 80)
+        report.append(f"\n📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Current Status
+        report.append(f"\n🚨 CURRENT ALERT STATUS: {alert_info['emoji']} {alert_info['name']}")
+        report.append(f"   Stress Index: {stress_index:.1f}/100")
+        
+        # Stress Category
+        if stress_index < 35:
+            report.append("   Status: Safe, ample supply")
+        elif stress_index < 50:
+            report.append("   Status: Monitor closely")
+        elif stress_index < 75:
+            report.append("   Status: Prepare for restrictions")
+        else:
+            report.append("   Status: CRITICAL - Emergency conditions")
+        
+        # 7-Day Forecast
+        report.append(f"\n📊 7-DAY SHORTAGE FORECAST:")
+        report.append(f"   Overall Risk: {shortage_forecast['shortage_risk_level']}")
+        report.append(f"   Max Expected Shortage: {shortage_forecast['max_shortage_pct']}%")
+        if shortage_forecast['days_with_shortage']:
+            report.append(f"   Shortage Days: {shortage_forecast['days_with_shortage']}")
+        
+        # Daily Details
+        report.append(f"\n   Daily Breakdown:")
+        report.append(f"   {'Day':<5} {'Demand':<10} {'Supply':<10} {'Shortage':<12} {'Status':<12}")
+        report.append(f"   {'-'*49}")
+        
+        for day_forecast in shortage_forecast['daily_forecasts']:
+            day = day_forecast['day']
+            demand = f"{day_forecast['forecasted_demand']:.1f}"
+            supply = f"{day_forecast['available_supply']:.1f}"
+            shortage = f"{day_forecast['shortage_pct']:.1f}%"
+            status = day_forecast['status']
+            report.append(f"   Day {day:<1} {demand:<10} {supply:<10} {shortage:<12} {status:<12}")
+        
+        # Zone Impacts (if provided)
+        if zone_allocations:
+            report.append(f"\n📍 ZONE IMPACTS:")
+            for zone in zone_allocations.get('zone_allocations', []):
+                if zone['allocation_percentage'] < 100:
+                    report.append(f"   {zone['zone_id']}: {zone['allocation_percentage']:.0f}% allocation")
+        
+        report.append("\n" + "=" * 80)
+        return "\n".join(report)
+    
+    def _get_alert_level(self, stress_index: float) -> str:
+        """Determine alert level based on stress index."""
+        if stress_index < self.thresholds['yellow'][0]:
+            return 'green'
+        elif stress_index < self.thresholds['orange'][0]:
+            return 'yellow'
+        elif stress_index < self.thresholds['red'][0]:
+            return 'orange'
+        else:
+            return 'red'
+    
+    def _get_shortage_alert(self, shortage_pct: float, storage_remaining: float) -> str:
+        """Determine alert for a specific shortage event."""
+        if shortage_pct == 0:
+            return 'SAFE'
+        elif shortage_pct < 10:
+            return 'MILD'
+        elif shortage_pct < 25:
+            return 'MODERATE'
+        else:
+            return 'SEVERE'
+
+
 if __name__ == '__main__':
     example_training_pipeline()

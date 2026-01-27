@@ -14,7 +14,8 @@ from forecasting_engine import (
     WaterDemandForecastingService,
     ForecastEvaluator,
     ScenarioSimulator,
-    WaterDistributionRecommender
+    WaterDistributionRecommender,
+    WaterRiskAlertManager
 )
 import numpy as np
 import pandas as pd
@@ -30,11 +31,12 @@ app = Flask(__name__)
 forecasting_service = None
 scenario_simulator = None
 distribution_recommender = None
+alert_manager = None
 latest_forecast = None
 
 def initialize_service():
     """Initialize the forecasting service with synthetic data on startup."""
-    global forecasting_service, scenario_simulator, distribution_recommender
+    global forecasting_service, scenario_simulator, distribution_recommender, alert_manager
     
     print("🔄 Initializing forecasting service...")
     
@@ -108,6 +110,9 @@ def initialize_service():
     distribution_recommender.add_zone('RESIDENTIAL_B', 'standard', 25.0, 45.0, 180000)
     distribution_recommender.add_zone('COMMERCIAL', 'commercial', 15.0, 30.0, 100000)
     distribution_recommender.add_zone('INDUSTRIAL', 'industrial', 20.0, 45.0, 50000)
+    
+    # Initialize alert manager
+    alert_manager = WaterRiskAlertManager()
     
     return True
 
@@ -477,6 +482,195 @@ def generate_action_items(release_rec, allocation, rationing):
         })
     
     return actions
+
+# ============================================================================
+# ALERT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/alerts/current', methods=['GET'])
+def get_current_alert():
+    """Get current water risk alert status."""
+    try:
+        if alert_manager is None:
+            return jsonify({'error': 'Alert system not initialized'}), 500
+        
+        # Use latest forecast if available
+        current_storage = 120.0  # Simulated current storage (MLD)
+        reservoir_capacity = 180.0
+        forecasted_demand = 150.0
+        max_daily_supply = 165.0
+        
+        # Calculate stress index
+        stress_result = alert_manager.compute_water_stress_index(
+            forecasted_demand_mld=forecasted_demand,
+            current_storage_mld=current_storage,
+            reservoir_capacity_mld=reservoir_capacity,
+            max_daily_supply_mld=max_daily_supply,
+            actual_inflow_mld=2.0,
+            trend_days=7
+        )
+        
+        # Generate alert message
+        alert_msg = alert_manager.generate_alert_message(
+            stress_index=stress_result['stress_index'],
+            alert_level=stress_result['alert_level'],
+            forecasted_shortage_pct=0.0
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'current_alert': alert_msg,
+            'stress_breakdown': stress_result['component_breakdown'],
+            'metrics': stress_result['metrics']
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/alerts/analyze', methods=['POST'])
+def analyze_alert():
+    """Analyze water risk and return detailed alert."""
+    try:
+        if alert_manager is None:
+            return jsonify({'error': 'Alert system not initialized'}), 500
+        
+        data = request.json
+        
+        # Get parameters from request or use defaults
+        current_storage = data.get('current_storage_mld', 120.0)
+        reservoir_capacity = data.get('reservoir_capacity_mld', 180.0)
+        forecasted_demand = data.get('forecasted_demand_mld', 150.0)
+        max_daily_supply = data.get('max_daily_supply_mld', 165.0)
+        actual_inflow = data.get('actual_inflow_mld', 2.0)
+        
+        # Calculate stress index
+        stress_result = alert_manager.compute_water_stress_index(
+            forecasted_demand_mld=forecasted_demand,
+            current_storage_mld=current_storage,
+            reservoir_capacity_mld=reservoir_capacity,
+            max_daily_supply_mld=max_daily_supply,
+            actual_inflow_mld=actual_inflow
+        )
+        
+        # Generate alert
+        alert_msg = alert_manager.generate_alert_message(
+            stress_index=stress_result['stress_index'],
+            alert_level=stress_result['alert_level'],
+            forecasted_shortage_pct=0.0
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'alert': alert_msg,
+            'stress_details': stress_result
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/alerts/forecast-7day', methods=['POST'])
+def forecast_7day_alert():
+    """Generate 7-day risk forecast and predicted shortage dates."""
+    try:
+        if alert_manager is None:
+            return jsonify({'error': 'Alert system not initialized'}), 500
+        
+        data = request.json
+        
+        # Get parameters
+        current_storage = data.get('current_storage_mld', 120.0)
+        forecasted_demands = data.get('forecasted_demands', 
+                                      [150.0] * 7)  # Default 7 days at 150 MLD
+        forecasted_inflows = data.get('forecasted_inflows', 
+                                      [2.0] * 7)    # Default 7 days at 2 MLD inflow
+        max_daily_supply = data.get('max_daily_supply_mld', 165.0)
+        
+        # Get 7-day shortage forecast
+        shortage_forecast = alert_manager.predict_shortages_forward(
+            current_storage_mld=current_storage,
+            forecasted_demands=forecasted_demands,
+            forecasted_inflows=forecasted_inflows,
+            max_daily_supply_mld=max_daily_supply
+        )
+        
+        # Determine overall alert
+        max_shortage = shortage_forecast['max_shortage_pct']
+        if max_shortage > 0:
+            # Calculate stress index based on shortage
+            stress_index = min(100, max_shortage * 2)
+        else:
+            stress_index = 25  # Low stress if no shortage
+        
+        alert_level = alert_manager._get_alert_level(stress_index)
+        
+        alert_msg = alert_manager.generate_alert_message(
+            stress_index=stress_index,
+            alert_level=alert_level,
+            forecasted_shortage_pct=max_shortage,
+            days_to_critical=(shortage_forecast['days_with_shortage'][0] 
+                            if shortage_forecast['days_with_shortage'] else None)
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'forecast': shortage_forecast,
+            'alert': alert_msg,
+            'risk_level': shortage_forecast['shortage_risk_level']
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/alerts/comprehensive-report', methods=['POST'])
+def comprehensive_alert_report():
+    """Generate comprehensive alert report for decision makers."""
+    try:
+        if alert_manager is None:
+            return jsonify({'error': 'Alert system not initialized'}), 500
+        
+        data = request.json
+        
+        # Get parameters
+        current_storage = data.get('current_storage_mld', 120.0)
+        reservoir_capacity = data.get('reservoir_capacity_mld', 180.0)
+        forecasted_demand = data.get('forecasted_demand_mld', 150.0)
+        forecasted_demands = data.get('forecasted_demands', [150.0] * 7)
+        forecasted_inflows = data.get('forecasted_inflows', [2.0] * 7)
+        max_daily_supply = data.get('max_daily_supply_mld', 165.0)
+        
+        # Calculate current stress
+        stress_result = alert_manager.compute_water_stress_index(
+            forecasted_demand_mld=forecasted_demand,
+            current_storage_mld=current_storage,
+            reservoir_capacity_mld=reservoir_capacity,
+            max_daily_supply_mld=max_daily_supply
+        )
+        
+        # Get 7-day forecast
+        shortage_forecast = alert_manager.predict_shortages_forward(
+            current_storage_mld=current_storage,
+            forecasted_demands=forecasted_demands,
+            forecasted_inflows=forecasted_inflows,
+            max_daily_supply_mld=max_daily_supply
+        )
+        
+        # Generate comprehensive report
+        report = alert_manager.generate_comprehensive_alert_report(
+            stress_index=stress_result['stress_index'],
+            shortage_forecast=shortage_forecast
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'report': report,
+            'stress_index': stress_result['stress_index'],
+            'alert_level': stress_result['alert_level'],
+            'shortage_risk': shortage_forecast['shortage_risk_level']
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def health():
     """Health check endpoint."""
     return jsonify({
