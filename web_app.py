@@ -13,7 +13,8 @@ from forecasting_engine import (
     WaterDemandLSTMModel,
     WaterDemandForecastingService,
     ForecastEvaluator,
-    ScenarioSimulator
+    ScenarioSimulator,
+    WaterDistributionRecommender
 )
 import numpy as np
 import pandas as pd
@@ -28,11 +29,12 @@ app = Flask(__name__)
 
 forecasting_service = None
 scenario_simulator = None
+distribution_recommender = None
 latest_forecast = None
 
 def initialize_service():
     """Initialize the forecasting service with synthetic data on startup."""
-    global forecasting_service, scenario_simulator
+    global forecasting_service, scenario_simulator, distribution_recommender
     
     print("🔄 Initializing forecasting service...")
     
@@ -96,6 +98,16 @@ def initialize_service():
         baseline_demand=150.0,
         available_supply=165.0
     )
+    
+    # Initialize distribution recommender
+    distribution_recommender = WaterDistributionRecommender()
+    
+    # Add zones with realistic demand profiles
+    distribution_recommender.add_zone('HOSPITAL_ZONE', 'critical', 5.0, 8.0, 50000)
+    distribution_recommender.add_zone('RESIDENTIAL_A', 'essential', 30.0, 50.0, 200000)
+    distribution_recommender.add_zone('RESIDENTIAL_B', 'standard', 25.0, 45.0, 180000)
+    distribution_recommender.add_zone('COMMERCIAL', 'commercial', 15.0, 30.0, 100000)
+    distribution_recommender.add_zone('INDUSTRIAL', 'industrial', 20.0, 45.0, 50000)
     
     return True
 
@@ -276,7 +288,195 @@ def combine_scenarios():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/api/distribution/recommend-release', methods=['POST'])
+def recommend_release():
+    """
+    Recommend daily water release from reservoir.
+    
+    Request JSON:
+    {
+        'forecasted_demand_mld': 160.0,
+        'reservoir_capacity_mld': 500.0,
+        'current_storage_mld': 350.0,
+        'max_daily_supply_mld': 165.0,
+        'safety_buffer_percentage': 10.0
+    }
+    """
+    try:
+        data = request.json
+        
+        forecasted_demand = data.get('forecasted_demand_mld', 160.0)
+        reservoir_capacity = data.get('reservoir_capacity_mld', 500.0)
+        current_storage = data.get('current_storage_mld', 350.0)
+        max_supply = data.get('max_daily_supply_mld', 165.0)
+        safety_buffer = data.get('safety_buffer_percentage', 10.0)
+        
+        # Get recommendation
+        release_rec = distribution_recommender.recommend_daily_release(
+            forecasted_demand_mld=forecasted_demand,
+            reservoir_capacity_mld=reservoir_capacity,
+            current_storage_mld=current_storage,
+            max_daily_supply_mld=max_supply,
+            safety_buffer_percentage=safety_buffer
+        )
+        
+        # Get rationing schedule based on potential shortage
+        potential_shortage = max(0, forecasted_demand - max_supply)
+        shortage_pct = (potential_shortage / forecasted_demand * 100) if forecasted_demand > 0 else 0
+        rationing = distribution_recommender.calculate_rationing_schedule(shortage_pct)
+        
+        return jsonify({
+            'status': 'success',
+            'release_recommendation': release_rec,
+            'rationing_schedule': rationing,
+            'explanation': f"Release {release_rec['recommended_release_mld']} MLD to {release_rec['reason']}"
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/distribution/allocate-zones', methods=['POST'])
+def allocate_zones():
+    """
+    Allocate water to different zones based on priority.
+    
+    Request JSON:
+    {
+        'total_available_mld': 160.0,
+        'zone_demands': {
+            'HOSPITAL_ZONE': 6.0,
+            'RESIDENTIAL_A': 40.0,
+            'RESIDENTIAL_B': 35.0,
+            'COMMERCIAL': 25.0,
+            'INDUSTRIAL': 35.0
+        }
+    }
+    """
+    try:
+        data = request.json
+        total_available = data.get('total_available_mld', 160.0)
+        zone_demands = data.get('zone_demands', {
+            'HOSPITAL_ZONE': 6.0,
+            'RESIDENTIAL_A': 40.0,
+            'RESIDENTIAL_B': 35.0,
+            'COMMERCIAL': 25.0,
+            'INDUSTRIAL': 35.0
+        })
+        
+        # Get allocation
+        allocation = distribution_recommender.allocate_to_zones(
+            total_available_mld=total_available,
+            zone_demands=zone_demands
+        )
+        
+        # Generate report
+        report = distribution_recommender.generate_allocation_report(allocation, {})
+        
+        return jsonify({
+            'status': 'success',
+            'allocation': allocation,
+            'report': report,
+            'summary': {
+                'total_shortage_pct': allocation['shortage_percentage'],
+                'shortage_status': allocation['shortage_status'],
+                'affected_zones': len([z for z in allocation['zone_allocations'] 
+                                      if z['allocation_percentage'] < 100])
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/distribution/full-plan', methods=['POST'])
+def full_distribution_plan():
+    """
+    Generate complete distribution plan: release recommendation + zone allocation.
+    
+    Request JSON:
+    {
+        'forecasted_demand_mld': 160.0,
+        'reservoir_capacity_mld': 500.0,
+        'current_storage_mld': 350.0,
+        'max_daily_supply_mld': 165.0
+    }
+    """
+    try:
+        data = request.json
+        
+        # Step 1: Recommend release
+        release_rec = distribution_recommender.recommend_daily_release(
+            forecasted_demand_mld=data.get('forecasted_demand_mld', 160.0),
+            reservoir_capacity_mld=data.get('reservoir_capacity_mld', 500.0),
+            current_storage_mld=data.get('current_storage_mld', 350.0),
+            max_daily_supply_mld=data.get('max_daily_supply_mld', 165.0)
+        )
+        
+        # Step 2: Allocate to zones
+        zone_demands = {
+            'HOSPITAL_ZONE': 6.0,
+            'RESIDENTIAL_A': 40.0,
+            'RESIDENTIAL_B': 35.0,
+            'COMMERCIAL': 25.0,
+            'INDUSTRIAL': 35.0
+        }
+        
+        allocation = distribution_recommender.allocate_to_zones(
+            total_available_mld=release_rec['recommended_release_mld'],
+            zone_demands=zone_demands
+        )
+        
+        # Step 3: Get rationing schedule
+        shortage_pct = allocation['shortage_percentage']
+        rationing = distribution_recommender.calculate_rationing_schedule(shortage_pct)
+        
+        return jsonify({
+            'status': 'success',
+            'daily_release': {
+                'amount_mld': release_rec['recommended_release_mld'],
+                'status': release_rec['status'],
+                'reason': release_rec['reason'],
+                'storage_health': release_rec['storage_health']
+            },
+            'zone_allocation': allocation,
+            'rationing': rationing,
+            'action_items': generate_action_items(release_rec, allocation, rationing)
+        })
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+def generate_action_items(release_rec, allocation, rationing):
+    """Generate actionable items for decision makers."""
+    actions = []
+    
+    # Release-related actions
+    if release_rec['status'] == 'CRITICAL':
+        actions.append({
+            'priority': 'URGENT',
+            'action': 'Declare water emergency',
+            'reason': 'Storage below safety buffer'
+        })
+    
+    # Shortage-related actions
+    shortage_pct = allocation['shortage_percentage']
+    if shortage_pct > 5:
+        actions.append({
+            'priority': 'HIGH' if shortage_pct > 20 else 'MEDIUM',
+            'action': f"Implement {rationing['status']} rationing",
+            'reason': f"{shortage_pct:.1f}% shortage forecasted"
+        })
+    
+    # Zone-specific actions
+    critical_zones = [z for z in allocation['zone_allocations'] 
+                     if z['allocation_percentage'] < 75]
+    if critical_zones:
+        actions.append({
+            'priority': 'HIGH',
+            'action': f"Deploy mobile water tankers to {len(critical_zones)} zones",
+            'zones': [z['zone_id'] for z in critical_zones]
+        })
+    
+    return actions
 def health():
     """Health check endpoint."""
     return jsonify({

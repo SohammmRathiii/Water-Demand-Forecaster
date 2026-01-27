@@ -1,14 +1,3 @@
-"""
-Urban Water Intelligence Platform - Demand Forecasting Engine
-==============================================================
-
-A production-ready forecasting system for water demand prediction with:
-- Short-term (1-7 days) using LSTM neural networks
-- Medium-term (1-6 months) using Prophet statistical model
-- Confidence intervals for risk assessment
-- Explainability for government stakeholders
-"""
-
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
@@ -31,6 +20,7 @@ from prophet import Prophet
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+#Soham Rathi
 
 
 # ============================================================================
@@ -1263,7 +1253,468 @@ class ForecastEvaluator:
 
 
 # ============================================================================
-# 5. EXAMPLE USAGE & TRAINING PIPELINE
+# 5. SCENARIO SIMULATION MODULE
+# ============================================================================
+
+class ScenarioSimulator:
+    """
+    Water demand scenario simulator for strategic planning.
+    
+    Allows water authorities to model various conditions and their impact on demand:
+    - Heatwaves (prolonged high temperatures)
+    - Rainfall variations (deficit or surplus)
+    - Population growth surges
+    - Festival overlaps (multiple events simultaneously)
+    - Industrial activity changes
+    
+    For each scenario, computes:
+    - Updated demand forecast
+    - Water stress percentage (demand/supply ratio)
+    - Risk category (Low/Medium/High)
+    - Actionable recommendations
+    
+    Enables proactive planning: "What if X happens? What do we need to do?"
+    """
+    
+    def __init__(self, zone_id: str, baseline_demand: float, available_supply: float):
+        """
+        Initialize scenario simulator.
+        
+        Args:
+            zone_id: Geographic zone (e.g., 'ZONE_A')
+            baseline_demand: Typical daily demand (MLD)
+            available_supply: Maximum supply capacity (MLD)
+        """
+        self.zone_id = zone_id
+        self.baseline_demand = baseline_demand
+        self.available_supply = available_supply
+        self.current_scenario = None
+        self.scenarios_history = []
+        
+    def apply_heatwave(self, num_days: int, max_temp: float = 45) -> Dict:
+        """
+        Simulate prolonged heatwave conditions.
+        
+        Args:
+            num_days: Duration of heatwave (days)
+            max_temp: Peak temperature (°C)
+            
+        Returns:
+            Dictionary with scenario details and impact analysis
+        """
+        # Heat increases water demand
+        # Research: +5% per degree above 35°C
+        temp_excess = max(0, max_temp - 35)  # Degrees above baseline
+        demand_increase_pct = temp_excess * 0.05  # 5% per degree
+        
+        scenario = {
+            'name': f'{num_days}-day Heatwave',
+            'type': 'heatwave',
+            'parameters': {
+                'duration_days': num_days,
+                'peak_temperature': max_temp,
+                'temperature_excess': temp_excess
+            },
+            'demand_change_pct': demand_increase_pct,
+            'demand_increase_mld': self.baseline_demand * (demand_increase_pct / 100),
+            'forecast_demand': self.baseline_demand * (1 + demand_increase_pct / 100),
+            'reason': f'High temperature (+{temp_excess}°C above baseline) drives cooling/bathing demand'
+        }
+        
+        return self._analyze_scenario(scenario)
+    
+    def apply_rainfall_change(self, rainfall_change_pct: float) -> Dict:
+        """
+        Simulate rainfall deficit or surplus.
+        
+        Args:
+            rainfall_change_pct: Percentage change in rainfall
+                                 Negative = deficit, Positive = surplus
+            
+        Returns:
+            Dictionary with scenario details and impact analysis
+        """
+        # Rainfall deficit increases demand (less water from rain)
+        # Rainfall surplus decreases demand (groundwater recharge)
+        # Research: ±3% demand change per 20% rainfall change
+        demand_change_pct = -(rainfall_change_pct / 20) * 3
+        
+        scenario = {
+            'name': f'Rainfall {"Deficit" if rainfall_change_pct < 0 else "Surplus"} ({abs(rainfall_change_pct):.0f}%)',
+            'type': 'rainfall',
+            'parameters': {
+                'rainfall_change_pct': rainfall_change_pct
+            },
+            'demand_change_pct': demand_change_pct,
+            'demand_increase_mld': self.baseline_demand * (demand_change_pct / 100),
+            'forecast_demand': self.baseline_demand * (1 + demand_change_pct / 100),
+            'reason': f'{"Dry conditions increase" if rainfall_change_pct < 0 else "Wet conditions decrease"} outdoor water use'
+        }
+        
+        return self._analyze_scenario(scenario)
+    
+    def apply_population_surge(self, growth_pct: float, duration_days: int = 30) -> Dict:
+        """
+        Simulate population growth or influx (festivals, events, migration).
+        
+        Args:
+            growth_pct: Population increase percentage
+            duration_days: How long the surge lasts
+            
+        Returns:
+            Dictionary with scenario details and impact analysis
+        """
+        # Additional people need water
+        # Research: ~150L per person per day in urban areas
+        # Growth scales linearly with population
+        demand_change_pct = growth_pct  # 1% population growth = ~1% demand growth
+        
+        scenario = {
+            'name': f'Population Surge ({growth_pct:.0f}%, {duration_days} days)',
+            'type': 'population',
+            'parameters': {
+                'growth_pct': growth_pct,
+                'duration_days': duration_days
+            },
+            'demand_change_pct': demand_change_pct,
+            'demand_increase_mld': self.baseline_demand * (demand_change_pct / 100),
+            'forecast_demand': self.baseline_demand * (1 + demand_change_pct / 100),
+            'reason': f'{growth_pct:.0f}% more people need water (domestic + commercial)'
+        }
+        
+        return self._analyze_scenario(scenario)
+    
+    def apply_festival_overlap(self, num_festivals: int, avg_attendees: int = 50000) -> Dict:
+        """
+        Simulate multiple festivals/events overlapping.
+        
+        Args:
+            num_festivals: Number of simultaneous festivals
+            avg_attendees: Average attendees per festival
+            
+        Returns:
+            Dictionary with scenario details and impact analysis
+        """
+        # Festivals need water for: ceremonies, cleaning, temporary camps, festivities
+        # Research: ~200L per person per day during festival season
+        total_attendees = num_festivals * avg_attendees
+        festival_demand_mld = (total_attendees * 200) / 1_000_000  # Convert L to MLD
+        demand_change_pct = (festival_demand_mld / self.baseline_demand) * 100
+        
+        scenario = {
+            'name': f'{num_festivals} Festivals ({total_attendees:,} attendees)',
+            'type': 'festival',
+            'parameters': {
+                'num_festivals': num_festivals,
+                'total_attendees': total_attendees,
+                'avg_attendees_per_festival': avg_attendees
+            },
+            'demand_change_pct': demand_change_pct,
+            'demand_increase_mld': festival_demand_mld,
+            'forecast_demand': self.baseline_demand + festival_demand_mld,
+            'reason': f'{total_attendees:,} festival attendees require water for ceremonies, cleaning, festivities'
+        }
+        
+        return self._analyze_scenario(scenario)
+    
+    def apply_industrial_change(self, change_pct: float) -> Dict:
+        """
+        Simulate industrial activity increase/decrease.
+        
+        Args:
+            change_pct: Percentage change in industrial water demand
+                       Positive = more factories, Negative = shutdowns
+            
+        Returns:
+            Dictionary with scenario details and impact analysis
+        """
+        # Industrial demand is ~30% of total in typical Indian cities
+        industrial_baseline = self.baseline_demand * 0.3
+        industrial_change_mld = industrial_baseline * (change_pct / 100)
+        demand_change_pct = (industrial_change_mld / self.baseline_demand) * 100
+        
+        scenario = {
+            'name': f'Industrial Activity {"Increase" if change_pct > 0 else "Decrease"} ({change_pct:+.0f}%)',
+            'type': 'industrial',
+            'parameters': {
+                'change_pct': change_pct
+            },
+            'demand_change_pct': demand_change_pct,
+            'demand_increase_mld': industrial_change_mld,
+            'forecast_demand': self.baseline_demand + industrial_change_mld,
+            'reason': f'Industrial sector demand changes by {change_pct:+.0f}% due to manufacturing activity'
+        }
+        
+        return self._analyze_scenario(scenario)
+    
+    def combine_scenarios(self, scenarios: List[Dict]) -> Dict:
+        """
+        Combine multiple scenarios to see cumulative impact.
+        
+        Args:
+            scenarios: List of scenario dictionaries from individual scenario methods
+            
+        Returns:
+            Combined scenario with aggregate impact analysis
+        """
+        total_demand_increase = sum(s['demand_increase_mld'] for s in scenarios)
+        total_demand = self.baseline_demand + total_demand_increase
+        combined_demand_pct = (total_demand_increase / self.baseline_demand) * 100
+        
+        scenario_names = [s['name'] for s in scenarios]
+        
+        combined = {
+            'name': f'Combined: {", ".join(scenario_names)}',
+            'type': 'combined',
+            'individual_scenarios': scenarios,
+            'demand_change_pct': combined_demand_pct,
+            'demand_increase_mld': total_demand_increase,
+            'forecast_demand': total_demand,
+            'reason': f'Cumulative effect of {len(scenarios)} simultaneous scenarios'
+        }
+        
+        return self._analyze_scenario(combined)
+    
+    def _analyze_scenario(self, scenario: Dict) -> Dict:
+        """
+        Analyze scenario and compute stress metrics.
+        
+        Args:
+            scenario: Scenario dictionary with demand forecast
+            
+        Returns:
+            Enhanced scenario with stress analysis and recommendations
+        """
+        forecast_demand = scenario['forecast_demand']
+        
+        # Calculate stress metrics
+        stress_ratio = forecast_demand / self.available_supply
+        stress_pct = (stress_ratio - 1) * 100 if stress_ratio > 1 else 0
+        
+        # Determine risk category
+        if stress_ratio <= 0.8:
+            risk_category = 'Low'
+            risk_description = 'Supply comfortable, no rationing needed'
+        elif stress_ratio <= 0.95:
+            risk_category = 'Low-Medium'
+            risk_description = 'Supply adequate but monitor closely'
+        elif stress_ratio <= 1.05:
+            risk_category = 'Medium'
+            risk_description = 'Supply tight, may need conservation request'
+        elif stress_ratio <= 1.15:
+            risk_category = 'Medium-High'
+            risk_description = 'Likely shortage, rationing recommended'
+        else:
+            risk_category = 'High'
+            risk_description = 'Severe shortage, immediate action required'
+        
+        # Calculate deficit/surplus
+        deficit_mld = max(0, forecast_demand - self.available_supply)
+        surplus_mld = max(0, self.available_supply - forecast_demand)
+        
+        # Generate recommendations
+        recommendations = self._generate_recommendations(
+            stress_ratio,
+            deficit_mld,
+            scenario.get('type', 'combined')
+        )
+        
+        # Enhance scenario with analysis
+        scenario.update({
+            'supply_available_mld': self.available_supply,
+            'demand_forecast_mld': forecast_demand,
+            'stress_ratio': stress_ratio,
+            'stress_percentage': stress_pct,
+            'risk_category': risk_category,
+            'risk_description': risk_description,
+            'deficit_mld': deficit_mld,
+            'surplus_mld': surplus_mld,
+            'recommendations': recommendations,
+            'analysis_timestamp': datetime.now().isoformat()
+        })
+        
+        self.current_scenario = scenario
+        self.scenarios_history.append(scenario)
+        
+        return scenario
+    
+    @staticmethod
+    def _generate_recommendations(stress_ratio: float, deficit_mld: float, scenario_type: str) -> List[str]:
+        """
+        Generate actionable recommendations based on stress level.
+        
+        Args:
+            stress_ratio: Demand/Supply ratio
+            deficit_mld: Shortage in MLD
+            scenario_type: Type of scenario
+            
+        Returns:
+            List of specific recommendations
+        """
+        recommendations = []
+        
+        if stress_ratio <= 0.8:
+            recommendations.append('✓ Status: Green - No action needed')
+            recommendations.append('→ Monitor conditions and prepare contingency plans')
+        
+        elif stress_ratio <= 0.95:
+            recommendations.append('→ Advisory: Monitor demand trends carefully')
+            recommendations.append('→ Request voluntary 5-10% conservation from citizens')
+            recommendations.append('→ Prepare contingency supply activation plans')
+        
+        elif stress_ratio <= 1.05:
+            recommendations.append(f'⚠️ Warning: Expected deficit {deficit_mld:.0f} MLD')
+            recommendations.append('→ Activate contingency supply (backup reservoirs, recycling)')
+            recommendations.append('→ Reduce non-essential uses (garden watering, cleaning)')
+            recommendations.append('→ Request 15% voluntary conservation')
+        
+        elif stress_ratio <= 1.15:
+            recommendations.append(f'🔴 Critical: Severe deficit {deficit_mld:.0f} MLD')
+            recommendations.append('→ Activate ALL contingency supplies')
+            recommendations.append('→ Implement 25% mandatory rationing')
+            recommendations.append('→ Prioritize: Hospitals → Homes → Industry')
+            recommendations.append('→ Public communication campaign')
+        
+        else:
+            recommendations.append(f'🚨 Emergency: Catastrophic deficit {deficit_mld:.0f} MLD')
+            recommendations.append('→ Emergency rationing (40% reduction)')
+            recommendations.append('→ Declare water emergency')
+            recommendations.append('→ Activate all crisis measures')
+            recommendations.append('→ Coordinate with neighboring water boards')
+        
+        # Type-specific recommendations
+        if scenario_type == 'heatwave':
+            recommendations.append('→ Heat: Increase cooling water supply from groundwater')
+            recommendations.append('→ Public: Reduce shower duration and garden watering')
+        
+        elif scenario_type == 'rainfall':
+            recommendations.append('→ Drought: Prioritize reservoir refilling')
+            recommendations.append('→ Agriculture: Switch to drip irrigation')
+        
+        elif scenario_type == 'population':
+            recommendations.append('→ Surge: Verify population data and temporary status')
+            recommendations.append('→ Housing: Reduce per-capita allocation if permanent growth')
+        
+        elif scenario_type == 'festival':
+            recommendations.append('→ Event Planning: Coordinate with festival organizers')
+            recommendations.append('→ Recycling: Use grey water for festival cleaning')
+        
+        elif scenario_type == 'industrial':
+            recommendations.append('→ Industry: Mandate water recycling and efficiency')
+            recommendations.append('→ Incentives: Offer discounts for conservation')
+        
+        return recommendations
+    
+    def generate_scenario_report(self, scenario: Dict = None) -> str:
+        """
+        Generate human-readable scenario analysis report.
+        
+        Args:
+            scenario: Scenario to report (uses current if not provided)
+            
+        Returns:
+            Formatted text report
+        """
+        if scenario is None:
+            scenario = self.current_scenario
+        
+        if scenario is None:
+            return "No scenario has been simulated yet."
+        
+        report = f"""
+╔════════════════════════════════════════════════════════════════╗
+║         WATER DEMAND SCENARIO ANALYSIS REPORT                  ║
+╠════════════════════════════════════════════════════════════════╣
+║ Zone: {scenario.get('zone_id', 'Unknown')} | Date: {scenario.get('analysis_timestamp', 'N/A')}  
+║
+║ SCENARIO: {scenario['name']}
+║ ──────────────────────────────────────────────────────────────
+║
+║ DEMAND ANALYSIS:
+║ ───────────────
+║ Baseline Demand:           {self.baseline_demand:>7.1f} MLD
+║ Scenario Impact:           {scenario['demand_increase_mld']:>+7.1f} MLD ({scenario['demand_change_pct']:>+5.1f}%)
+║ Forecast Demand:           {scenario['forecast_demand']:>7.1f} MLD
+║
+║ SUPPLY & STRESS:
+║ ────────────────
+║ Available Supply:          {self.available_supply:>7.1f} MLD
+║ Stress Ratio:              {scenario['stress_ratio']:>7.2f}x (demand/supply)
+║ Stress Percentage:         {scenario['stress_percentage']:>7.1f}%
+║
+║ SHORTAGE ANALYSIS:
+║ ──────────────────"""
+        
+        if scenario['deficit_mld'] > 0:
+            report += f"""
+║ Water Deficit:             {scenario['deficit_mld']:>7.1f} MLD 🔴
+║ Percentage Deficit:        {(scenario['deficit_mld']/scenario['forecast_demand']*100):>7.1f}%"""
+        else:
+            report += f"""
+║ Water Surplus:             {scenario['surplus_mld']:>7.1f} MLD ✓
+║ Surplus Percentage:        {(scenario['surplus_mld']/self.available_supply*100):>7.1f}%"""
+        
+        report += f"""
+║
+║ RISK ASSESSMENT:
+║ ────────────────
+║ Risk Category:             {scenario['risk_category']:>10s}
+║ Description:               {scenario['risk_description']}
+║
+║ ROOT CAUSE:
+║ ───────────
+║ {scenario.get('reason', 'N/A')}
+║
+║ RECOMMENDED ACTIONS:
+║ ───────────────────"""
+        
+        for i, rec in enumerate(scenario['recommendations'], 1):
+            report += f"\n║ {i}. {rec}"
+        
+        report += """
+║
+╚════════════════════════════════════════════════════════════════╝
+        """
+        return report
+    
+    def compare_scenarios(self, scenario_list: List[Dict]) -> str:
+        """
+        Compare multiple scenarios side-by-side.
+        
+        Args:
+            scenario_list: List of scenario dictionaries
+            
+        Returns:
+            Formatted comparison table
+        """
+        comparison = f"""
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    SCENARIO COMPARISON ANALYSIS                               ║
+╠════════════════════════════════════════════════════════════════════════════════╣
+║
+║ Scenario Name            │ Demand │ Stress │ Risk Category  │ Deficit/Surplus
+║ ─────────────────────────┼────────┼────────┼────────────────┼──────────────
+"""
+        
+        for scenario in scenario_list:
+            name = scenario['name'][:20].ljust(20)
+            demand = f"{scenario['forecast_demand']:.0f}".rjust(6)
+            stress = f"{scenario['stress_ratio']:.2f}x".rjust(6)
+            risk = scenario['risk_category'].ljust(15)
+            
+            if scenario['deficit_mld'] > 0:
+                balance = f"-{scenario['deficit_mld']:.0f}MLD"
+            else:
+                balance = f"+{scenario['surplus_mld']:.0f}MLD"
+            
+            comparison += f"║ {name} │ {demand} │ {stress} │ {risk} │ {balance}\n"
+        
+        comparison += "║\n╚════════════════════════════════════════════════════════════════════════════════╝"
+        return comparison
+
+
+# ============================================================================
+# 6. EXAMPLE USAGE & TRAINING PIPELINE
 # ============================================================================
 
 def example_training_pipeline():
@@ -1457,9 +1908,527 @@ def example_training_pipeline():
     for rec in recs:
         print(f"   {rec}")
     
+    # ─────────────────────────────────────────────────────────────
+    # Step 6: SCENARIO SIMULATION - What-If Analysis
+    # ─────────────────────────────────────────────────────────────
+    
+    print("\n[6] SCENARIO SIMULATION - What-If Analysis...")
+    print("     Planning for different conditions to stress-test supply")
+    
+    # Initialize scenario simulator for ZONE_A
+    baseline_demand = 150.0  # MLD
+    available_supply = 165.0  # MLD (10% buffer)
+    
+    simulator = ScenarioSimulator(
+        zone_id='ZONE_A',
+        baseline_demand=baseline_demand,
+        available_supply=available_supply
+    )
+    
+    print(f"\n   Baseline conditions:")
+    print(f"     • Zone: ZONE_A")
+    print(f"     • Typical demand: {baseline_demand} MLD")
+    print(f"     • Available supply: {available_supply} MLD")
+    print(f"     • Buffer: {((available_supply/baseline_demand - 1)*100):.1f}%")
+    
+    # Scenario 1: Heatwave
+    print("\n   ─── SCENARIO 1: Heatwave (45°C for 15 days) ───")
+    heatwave = simulator.apply_heatwave(num_days=15, max_temp=45)
+    print(f"     Forecast demand: {heatwave['forecast_demand']:.1f} MLD (+{heatwave['demand_change_pct']:.1f}%)")
+    print(f"     Stress ratio: {heatwave['stress_ratio']:.2f}x")
+    print(f"     Risk: {heatwave['risk_category']} - {heatwave['risk_description']}")
+    if heatwave['deficit_mld'] > 0:
+        print(f"     ⚠️  Deficit: {heatwave['deficit_mld']:.1f} MLD")
+    
+    # Scenario 2: Rainfall deficit
+    print("\n   ─── SCENARIO 2: Rainfall Deficit (40% below normal) ───")
+    drought = simulator.apply_rainfall_change(rainfall_change_pct=-40)
+    print(f"     Forecast demand: {drought['forecast_demand']:.1f} MLD (+{drought['demand_change_pct']:.1f}%)")
+    print(f"     Stress ratio: {drought['stress_ratio']:.2f}x")
+    print(f"     Risk: {drought['risk_category']} - {drought['risk_description']}")
+    
+    # Scenario 3: Population surge
+    print("\n   ─── SCENARIO 3: Population Surge (8% increase) ───")
+    pop_surge = simulator.apply_population_surge(growth_pct=8, duration_days=30)
+    print(f"     Forecast demand: {pop_surge['forecast_demand']:.1f} MLD (+{pop_surge['demand_change_pct']:.1f}%)")
+    print(f"     Stress ratio: {pop_surge['stress_ratio']:.2f}x")
+    print(f"     Risk: {pop_surge['risk_category']}")
+    
+    # Scenario 4: Festival overlap
+    print("\n   ─── SCENARIO 4: Festival Overlap (3 major festivals) ───")
+    festival = simulator.apply_festival_overlap(num_festivals=3, avg_attendees=100000)
+    print(f"     Forecast demand: {festival['forecast_demand']:.1f} MLD (+{festival['demand_change_pct']:.1f}%)")
+    print(f"     Stress ratio: {festival['stress_ratio']:.2f}x")
+    print(f"     Risk: {festival['risk_category']}")
+    
+    # Scenario 5: Industrial growth
+    print("\n   ─── SCENARIO 5: Industrial Activity Surge (+25%) ───")
+    industrial = simulator.apply_industrial_change(change_pct=25)
+    print(f"     Forecast demand: {industrial['forecast_demand']:.1f} MLD (+{industrial['demand_change_pct']:.1f}%)")
+    print(f"     Stress ratio: {industrial['stress_ratio']:.2f}x")
+    print(f"     Risk: {industrial['risk_category']}")
+    
+    # Scenario 6: Combined stress
+    print("\n   ─── SCENARIO 6: COMBINED CRISIS (Multiple events) ───")
+    combined = simulator.combine_scenarios([heatwave, drought, festival])
+    print(f"     Combined scenarios: Heatwave + Drought + Festival")
+    print(f"     Forecast demand: {combined['forecast_demand']:.1f} MLD (+{combined['demand_change_pct']:.1f}%)")
+    print(f"     Stress ratio: {combined['stress_ratio']:.2f}x")
+    print(f"     Risk: {combined['risk_category']}")
+    if combined['deficit_mld'] > 0:
+        print(f"     🚨 CRITICAL DEFICIT: {combined['deficit_mld']:.1f} MLD")
+    
+    # Generate detailed report for worst scenario
+    print("\n   ─── DETAILED ANALYSIS: COMBINED CRISIS SCENARIO ───")
+    report = simulator.generate_scenario_report(combined)
+    print(report)
+    
+    # Show first few recommendations
+    print("\n   Top 5 Recommended Actions:")
+    for i, rec in enumerate(combined['recommendations'][:5], 1):
+        print(f"     {i}. {rec}")
+    
+    # Comparison of all scenarios
+    print("\n   ─── SCENARIO COMPARISON ───")
+    all_scenarios = [heatwave, drought, pop_surge, festival, industrial, combined]
+    comparison = simulator.compare_scenarios(all_scenarios)
+    print(comparison)
+    
     print("\n" + "=" * 70)
     print("FORECASTING ENGINE READY FOR DEPLOYMENT")
     print("=" * 70)
+
+
+# ============================================================================
+# 7. WATER DISTRIBUTION RECOMMENDATION ENGINE
+# ============================================================================
+
+class WaterDistributionRecommender:
+    """
+    Water Distribution Recommendation Engine
+    ========================================
+    
+    Purpose:
+    --------
+    Given forecasted demand and available supply, recommend optimal water distribution
+    across zones with different priority levels (hospitals, residential, industrial).
+    
+    Principles:
+    -----------
+    1. CRITICAL SERVICES FIRST
+       → Hospitals, fire departments, emergency services get guaranteed supply
+       → No rationing for life-critical needs
+    
+    2. ESSENTIAL CONSUMPTION NEXT
+       → Residential (drinking, cooking, sanitation)
+       → Minimum per-capita allocation maintained
+    
+    3. NON-ESSENTIAL GETS RATIONED
+       → Industrial uses (cooling, processing)
+       → Agricultural uses
+       → Non-essential commercial
+    
+    4. MAXIMIZE STORAGE UTILIZATION
+       → Use surplus in good times to build reserves
+       → Use reserves carefully during shortages
+       → Keep minimum safety buffer (10% of capacity)
+    
+    5. FAIRNESS & PREDICTABILITY
+       → Clear allocation rules (not arbitrary)
+       → Businesses can plan around rationing schedule
+       → Transparency builds public trust
+    """
+    
+    def __init__(self):
+        """Initialize distribution recommender with zone configurations."""
+        self.zones = {}
+        self.allocation_history = []
+        self.shortage_alerts = []
+        
+        # Standard zone priorities
+        self.priority_levels = {
+            'critical': 1,      # Hospitals, fire, emergency
+            'essential': 2,     # Residential (drinking/sanitation minimum)
+            'standard': 3,      # Residential (full comfort)
+            'commercial': 4,    # Non-essential commercial
+            'industrial': 5,    # Industrial & agricultural
+            'discretionary': 6  # Parks, fountains, etc.
+        }
+    
+    def add_zone(self, zone_id: str, priority: str, min_demand_mld: float, 
+                 max_demand_mld: float, current_population: int = None):
+        """
+        Add a zone to the distribution network.
+        
+        Args:
+            zone_id: Zone identifier (e.g., 'ZONE_CENTRAL')
+            priority: Priority level (critical, essential, standard, commercial, industrial, discretionary)
+            min_demand_mld: Minimum demand (MLD) - survival level
+            max_demand_mld: Maximum demand (MLD) - normal operation
+            current_population: Zone population for per-capita calculations
+        """
+        self.zones[zone_id] = {
+            'priority': priority,
+            'priority_level': self.priority_levels.get(priority, 5),
+            'min_demand': min_demand_mld,
+            'max_demand': max_demand_mld,
+            'population': current_population,
+            'allocated_today': 0,
+            'actual_demand': 0
+        }
+    
+    def recommend_daily_release(self, 
+                               forecasted_demand_mld: float,
+                               reservoir_capacity_mld: float,
+                               current_storage_mld: float,
+                               max_daily_supply_mld: float,
+                               safety_buffer_percentage: float = 10.0) -> Dict:
+        """
+        Recommend daily water release from reservoir.
+        
+        Strategy:
+        ---------
+        1. Calculate minimum water needed (critical + essential zones)
+        2. Check if current storage can provide it
+        3. Calculate safe release (don't deplete beyond safety buffer)
+        4. Release amount balances: adequacy + sustainability
+        
+        Args:
+            forecasted_demand_mld: Total forecasted demand (MLD)
+            reservoir_capacity_mld: Total reservoir capacity (MLD)
+            current_storage_mld: Current storage level (MLD)
+            max_daily_supply_mld: Physical limit on daily release (MLD)
+            safety_buffer_percentage: Minimum % of capacity to keep in reserve
+        
+        Returns:
+            Dictionary with release recommendation and reasoning
+        """
+        
+        # Calculate safety buffer (minimum storage to keep)
+        safety_buffer_mld = (safety_buffer_percentage / 100) * reservoir_capacity_mld
+        
+        # Usable storage (available for release)
+        usable_storage = current_storage_mld - safety_buffer_mld
+        usable_storage = max(usable_storage, 0)
+        
+        # Calculate minimum needs (critical + essential)
+        min_needs = self._calculate_minimum_needs()
+        
+        # Recommended release logic:
+        if usable_storage < 0:
+            # CRISIS: Storage is below safety buffer
+            release = min(forecasted_demand_mld, max_daily_supply_mld)
+            status = 'CRITICAL'
+            reason = f"Storage {current_storage_mld:.1f} MLD below safety buffer {safety_buffer_mld:.1f} MLD"
+        
+        elif forecasted_demand_mld <= max_daily_supply_mld:
+            # NORMAL: Can meet full demand
+            release = min(forecasted_demand_mld, max_daily_supply_mld)
+            # If storage above optimal level, reduce to maintain it
+            storage_ratio = current_storage_mld / reservoir_capacity_mld
+            if storage_ratio > 0.85:
+                release = min(release, max_daily_supply_mld * 0.95)
+            status = 'ADEQUATE'
+            reason = f"Supply {release:.1f} MLD covers demand {forecasted_demand_mld:.1f} MLD"
+        
+        else:
+            # SHORTAGE: Demand exceeds max supply
+            release = max_daily_supply_mld
+            status = 'SHORTAGE'
+            reason = f"Demand {forecasted_demand_mld:.1f} MLD exceeds max supply {max_daily_supply_mld:.1f} MLD"
+        
+        # Calculate impact after release
+        storage_after_release = current_storage_mld - release
+        days_to_empty = storage_after_release / (release + 0.01) if release > 0 else float('inf')
+        
+        return {
+            'recommended_release_mld': round(release, 2),
+            'status': status,
+            'reason': reason,
+            'current_storage_mld': round(current_storage_mld, 2),
+            'storage_after_release_mld': round(max(storage_after_release, 0), 2),
+            'safety_buffer_mld': round(safety_buffer_mld, 2),
+            'usable_storage_mld': round(usable_storage, 2),
+            'forecasted_total_demand_mld': round(forecasted_demand_mld, 2),
+            'max_supply_mld': max_daily_supply_mld,
+            'minimum_critical_needs_mld': round(min_needs, 2),
+            'days_to_empty_at_current_rate': round(days_to_empty, 1),
+            'storage_health': self._assess_storage_health(
+                current_storage_mld, reservoir_capacity_mld, safety_buffer_mld
+            )
+        }
+    
+    def allocate_to_zones(self, 
+                         total_available_mld: float,
+                         zone_demands: Dict[str, float],
+                         apply_rationing: bool = False) -> Dict:
+        """
+        Allocate available water to zones based on priority.
+        
+        Algorithm:
+        ----------
+        1. Sort zones by priority level (lower number = higher priority)
+        2. Allocate to critical zones first (100% of min demand)
+        3. Allocate to essential zones (100% of min demand)
+        4. Allocate to standard zones (proportional to demand)
+        5. If shortage, start rationing from lowest priority zones
+        
+        Args:
+            total_available_mld: Total water available for allocation (MLD)
+            zone_demands: Dict of {zone_id: forecasted_demand_mld}
+            apply_rationing: Whether to apply rationing constraints
+        
+        Returns:
+            Dictionary with zone-wise allocation plan
+        """
+        
+        allocation = {}
+        sorted_zones = sorted(
+            self.zones.items(),
+            key=lambda x: x[1]['priority_level']
+        )
+        
+        remaining_supply = total_available_mld
+        total_demand = sum(zone_demands.values())
+        shortage_ratio = remaining_supply / total_demand if total_demand > 0 else 1.0
+        
+        allocation_details = []
+        
+        # PASS 1: Allocate to CRITICAL services (100%)
+        for zone_id, zone_info in sorted_zones:
+            if zone_info['priority_level'] <= self.priority_levels['critical']:
+                min_needed = zone_info['min_demand']
+                allocation[zone_id] = min_needed
+                remaining_supply -= min_needed
+                allocation_details.append({
+                    'zone_id': zone_id,
+                    'priority': zone_info['priority'],
+                    'demand_mld': zone_demands.get(zone_id, min_needed),
+                    'allocated_mld': min_needed,
+                    'allocation_percentage': 100.0,
+                    'rationing_status': 'NO RATIONING'
+                })
+        
+        # PASS 2: Allocate to ESSENTIAL services (100% of minimum)
+        for zone_id, zone_info in sorted_zones:
+            if (zone_info['priority_level'] > self.priority_levels['critical'] and
+                zone_info['priority_level'] <= self.priority_levels['essential']):
+                min_needed = zone_info['min_demand']
+                allocation[zone_id] = min_needed
+                remaining_supply -= min_needed
+                allocation_details.append({
+                    'zone_id': zone_id,
+                    'priority': zone_info['priority'],
+                    'demand_mld': zone_demands.get(zone_id, min_needed),
+                    'allocated_mld': min_needed,
+                    'allocation_percentage': 100.0,
+                    'rationing_status': 'MINIMUM GUARANTEED'
+                })
+        
+        # PASS 3: Proportional allocation to remaining zones
+        for zone_id, zone_info in sorted_zones:
+            if zone_id not in allocation:
+                demand = zone_demands.get(zone_id, zone_info['max_demand'])
+                
+                if remaining_supply > 0:
+                    # Proportional to demand, but cap at max supply
+                    allocated = min(demand * shortage_ratio, remaining_supply)
+                    allocation[zone_id] = max(0, allocated)
+                    remaining_supply -= allocation[zone_id]
+                    percentage = (allocation[zone_id] / demand * 100) if demand > 0 else 0
+                else:
+                    # No supply left - complete cutoff
+                    allocation[zone_id] = 0
+                    percentage = 0
+                
+                # Determine rationing status
+                if percentage >= 95:
+                    rationing_status = 'NO RATIONING'
+                elif percentage >= 75:
+                    rationing_status = '⚠️  MILD RATIONING (25% reduction)'
+                elif percentage >= 50:
+                    rationing_status = '⚠️  MODERATE RATIONING (50% reduction)'
+                elif percentage > 0:
+                    rationing_status = '🔴 SEVERE RATIONING (70%+ reduction)'
+                else:
+                    rationing_status = '🔴 COMPLETE CUTOFF'
+                
+                allocation_details.append({
+                    'zone_id': zone_id,
+                    'priority': zone_info['priority'],
+                    'demand_mld': demand,
+                    'allocated_mld': allocation[zone_id],
+                    'allocation_percentage': round(percentage, 1),
+                    'rationing_status': rationing_status
+                })
+        
+        # Calculate summary statistics
+        total_allocated = sum(allocation.values())
+        total_shortage = max(0, total_demand - total_allocated)
+        shortage_percentage = (total_shortage / total_demand * 100) if total_demand > 0 else 0
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'total_available_mld': round(total_available_mld, 2),
+            'total_demand_mld': round(total_demand, 2),
+            'total_allocated_mld': round(total_allocated, 2),
+            'total_shortage_mld': round(total_shortage, 2),
+            'shortage_percentage': round(shortage_percentage, 1),
+            'shortage_status': (
+                '✅ NO SHORTAGE' if shortage_percentage <= 5 else
+                '⚠️  MINOR SHORTAGE' if shortage_percentage <= 15 else
+                '⚠️  MODERATE SHORTAGE' if shortage_percentage <= 30 else
+                '🔴 SEVERE SHORTAGE'
+            ),
+            'zone_allocations': allocation_details,
+            'allocation_by_zone': allocation
+        }
+    
+    def calculate_rationing_schedule(self, shortage_percentage: float) -> Dict:
+        """
+        Create a rationing schedule for non-essential uses.
+        
+        Strategy:
+        ---------
+        - Tell public HOW MUCH they're short on
+        - WHEN the shortages will happen (morning peak vs evening)
+        - WHAT to expect & WHEN it will end
+        - This certainty is more valuable than no information
+        
+        Args:
+            shortage_percentage: Percentage shortage (0-100)
+        
+        Returns:
+            Rationing schedule with time slots and restrictions
+        """
+        
+        if shortage_percentage <= 5:
+            return {
+                'status': 'NO RATIONING',
+                'schedule': 'All hours available',
+                'industrial_restriction': 'No restriction',
+                'agricultural_restriction': 'No restriction',
+                'commercial_restriction': 'No restriction'
+            }
+        
+        elif shortage_percentage <= 15:
+            return {
+                'status': 'MILD RATIONING',
+                'schedule': 'Reduced during 10 AM - 5 PM peak',
+                'industrial_restriction': '20% reduction during peak hours',
+                'agricultural_restriction': '30% reduction during peak hours',
+                'commercial_restriction': 'Non-essential sprinklers prohibited 8 AM - 8 PM',
+                'public_message': 'Avoid washing cars/outdoor watering during peak. Use water wisely.'
+            }
+        
+        elif shortage_percentage <= 30:
+            return {
+                'status': 'MODERATE RATIONING',
+                'schedule': 'Supply cuts 9 AM - 6 PM daily (3 hours in 3 areas at a time)',
+                'industrial_restriction': '50% reduction all hours, no operation 2-4 PM',
+                'agricultural_restriction': 'Only early morning (5-7 AM) irrigation allowed',
+                'commercial_restriction': 'All non-essential outdoor water prohibited',
+                'public_message': 'Supply cuts during peak. Store water. Cold showers recommended. Toilets use stored water.',
+                'duration_estimate': 'Expected 7-14 days'
+            }
+        
+        else:  # > 30% shortage
+            return {
+                'status': 'SEVERE RATIONING',
+                'schedule': '4-8 hour supply cuts, 2-3 times weekly',
+                'industrial_restriction': '70% reduction, many facilities closed',
+                'agricultural_restriction': 'All irrigation prohibited',
+                'commercial_restriction': 'All non-essential use prohibited',
+                'public_message': 'Severe shortage. Use water only for drinking/cooking/sanitation. Expect 4-8 hour supply cuts.',
+                'duration_estimate': 'Ongoing crisis - monitor daily updates',
+                'emergency_measures': [
+                    'Mobile water tanker distribution in deficient areas',
+                    'Emergency desalination/recycled water activation',
+                    'Community water storage points established'
+                ]
+            }
+    
+    def generate_allocation_report(self, allocation_result: Dict, 
+                                  reservoir_info: Dict) -> str:
+        """
+        Generate human-readable allocation report for decision makers.
+        
+        Args:
+            allocation_result: Output from allocate_to_zones()
+            reservoir_info: Reservoir status info
+        
+        Returns:
+            Formatted report string
+        """
+        
+        report = []
+        report.append("\n" + "=" * 80)
+        report.append("WATER DISTRIBUTION ALLOCATION REPORT")
+        report.append("=" * 80)
+        report.append(f"\n📅 Generated: {allocation_result['timestamp']}")
+        
+        # Overall status
+        report.append(f"\n📊 OVERALL STATUS: {allocation_result['shortage_status']}")
+        report.append(f"   Total Demand: {allocation_result['total_demand_mld']} MLD")
+        report.append(f"   Available Supply: {allocation_result['total_available_mld']} MLD")
+        report.append(f"   Total Allocation: {allocation_result['total_allocated_mld']} MLD")
+        report.append(f"   Total Shortage: {allocation_result['total_shortage_mld']} MLD ({allocation_result['shortage_percentage']}%)")
+        
+        # Zone-wise breakdown
+        report.append("\n📍 ZONE-WISE ALLOCATION:")
+        report.append("-" * 80)
+        report.append(f"{'Zone':<20} {'Priority':<12} {'Demand':<12} {'Allocated':<12} {'%':<8} {'Status':<25}")
+        report.append("-" * 80)
+        
+        for zone in allocation_result['zone_allocations']:
+            zone_id = zone['zone_id'][:15]  # Truncate for display
+            priority = zone['priority'][:11]
+            demand = f"{zone['demand_mld']:.1f}"
+            allocated = f"{zone['allocated_mld']:.1f}"
+            percentage = f"{zone['allocation_percentage']:.0f}%"
+            status = zone['rationing_status'][:24]
+            
+            report.append(f"{zone_id:<20} {priority:<12} {demand:<12} {allocated:<12} {percentage:<8} {status:<25}")
+        
+        report.append("-" * 80)
+        
+        # Rationing schedule
+        if allocation_result['shortage_percentage'] > 5:
+            rationing = self.calculate_rationing_schedule(allocation_result['shortage_percentage'])
+            report.append(f"\n⏰ RATIONING SCHEDULE: {rationing['status']}")
+            report.append(f"   When: {rationing.get('schedule', 'N/A')}")
+            report.append(f"   Industrial: {rationing.get('industrial_restriction', 'N/A')}")
+            report.append(f"   Agriculture: {rationing.get('agricultural_restriction', 'N/A')}")
+            report.append(f"   Commercial: {rationing.get('commercial_restriction', 'N/A')}")
+        
+        report.append("\n" + "=" * 80)
+        return "\n".join(report)
+    
+    def _calculate_minimum_needs(self) -> float:
+        """Calculate total minimum water needed for critical + essential services."""
+        min_needs = 0
+        for zone in self.zones.values():
+            if zone['priority_level'] <= self.priority_levels['essential']:
+                min_needs += zone['min_demand']
+        return min_needs
+    
+    def _assess_storage_health(self, current: float, capacity: float, 
+                              buffer: float) -> str:
+        """Assess storage health based on current level."""
+        ratio = current / capacity if capacity > 0 else 0
+        
+        if current < buffer:
+            return '🔴 CRITICAL - Below safety buffer'
+        elif ratio < 0.25:
+            return '🔴 VERY LOW'
+        elif ratio < 0.5:
+            return '🟠 LOW'
+        elif ratio < 0.75:
+            return '🟡 MODERATE'
+        elif ratio < 0.9:
+            return '🟢 HEALTHY'
+        else:
+            return '💧 FULL'
 
 
 if __name__ == '__main__':
