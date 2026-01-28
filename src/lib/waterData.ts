@@ -377,17 +377,7 @@ export interface FeatureImportance {
   explanation: string;
 }
 
-export function getFeatureImportance(): FeatureImportance[] {
-  return [
-    { feature: 'Temperature', importance: 28, impact: 'positive', explanation: 'Higher temperatures increase water consumption for cooling and hydration' },
-    { feature: 'Day of Week', importance: 18, impact: 'positive', explanation: 'Weekdays show higher commercial and industrial demand' },
-    { feature: 'Rainfall', importance: 15, impact: 'negative', explanation: 'Rainfall reduces irrigation needs and outdoor water usage' },
-    { feature: 'Festival Activity', importance: 12, impact: 'positive', explanation: 'Festivals bring additional population and consumption' },
-    { feature: 'Industrial Index', importance: 11, impact: 'positive', explanation: 'Industrial activity directly correlates with process water needs' },
-    { feature: 'Population Density', importance: 9, impact: 'positive', explanation: 'Higher population requires proportionally more water' },
-    { feature: 'Season', importance: 7, impact: 'positive', explanation: 'Summer months show sustained higher demand patterns' },
-  ];
-}
+
 
 export function generateAIResponse(query: string, context: {
   stressIndex: number;
