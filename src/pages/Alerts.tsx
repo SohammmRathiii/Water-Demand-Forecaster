@@ -255,7 +255,10 @@ export default function Alerts() {
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/30">
                 <p className="text-xs text-muted-foreground">Max Shortage</p>
-                
+                <p className={cn(
+                  "text-2xl font-bold font-mono",
+                  maxShortage === 0 ? 'text-alert-green' : 'text-alert-red'
+                )}>
                   {maxShortage} MLD
                 </p>
               </div>
