@@ -312,17 +312,24 @@ export function recommendDistribution(
   const safetyBuffer = reservoirCapacity * (safetyBufferPct / 100);
   const availableForRelease = currentStorage - safetyBuffer;
   
+  // Logic: 
+  // 1. Calculate Supply vs Demand
+  // 2. Determine Stress Status
+  // 3. Allocate based on Priority (Essential > Residential > Commercial > Industrial)
+
   let recommendedRelease = Math.min(forecastedDemand, maxDailySupply, Math.max(0, availableForRelease));
   
   let status: 'normal' | 'reduced' | 'critical';
   let reason: string;
   
-  if (recommendedRelease >= forecastedDemand) {
+  const supplyRatio = recommendedRelease / forecastedDemand;
+
+  if (supplyRatio >= 0.98) {
     status = 'normal';
     reason = 'Sufficient supply to meet full demand';
-  } else if (recommendedRelease >= forecastedDemand * 0.8) {
+  } else if (supplyRatio >= 0.8) {
     status = 'reduced';
-    reason = 'Supply constrained - reduced allocation';
+    reason = 'Supply constrained - priority allocation in effect';
   } else {
     status = 'critical';
     reason = 'Critical shortage - emergency rationing required';
@@ -339,18 +346,33 @@ export function recommendDistribution(
   
   const daysToEmpty = recommendedRelease > 0 ? currentStorage / recommendedRelease : 999;
 
+  // Sequential Allocation Logic
+  // Order: critical > essential > standard > commercial > industrial
   const priorityOrder = ['critical', 'essential', 'standard', 'commercial', 'industrial'];
-  const zoneAllocations = zones
-    .sort((a, b) => priorityOrder.indexOf(a.priority) - priorityOrder.indexOf(b.priority))
-    .map(zone => {
+  
+  const zoneAllocations = zones.map(zone => {
       let allocationRatio: number;
+      // In a real system, we would fill buckets sequentially. 
+      // Here we simulate it by penalizing lower priorities more as status worsens.
+      
       switch (zone.priority) {
-        case 'critical': allocationRatio = 1.0; break;
-        case 'essential': allocationRatio = status === 'normal' ? 1.0 : 0.9; break;
-        case 'standard': allocationRatio = status === 'normal' ? 1.0 : status === 'reduced' ? 0.8 : 0.6; break;
-        case 'commercial': allocationRatio = status === 'normal' ? 1.0 : status === 'reduced' ? 0.7 : 0.4; break;
-        case 'industrial': allocationRatio = status === 'normal' ? 1.0 : status === 'reduced' ? 0.6 : 0.3; break;
-        default: allocationRatio = 0.5;
+        case 'critical': 
+            allocationRatio = 1.0; 
+            break;
+        case 'essential': 
+            allocationRatio = status === 'normal' ? 1.0 : 0.95; 
+            break;
+        case 'standard': 
+            allocationRatio = status === 'normal' ? 1.0 : status === 'reduced' ? 0.85 : 0.6; 
+            break;
+        case 'commercial': 
+            allocationRatio = status === 'normal' ? 1.0 : status === 'reduced' ? 0.75 : 0.4; 
+            break;
+        case 'industrial': 
+            allocationRatio = status === 'normal' ? 1.0 : status === 'reduced' ? 0.5 : 0.2; 
+            break;
+        default: 
+            allocationRatio = 0.5;
       }
       return {
         zoneId: zone.id,
@@ -377,7 +399,17 @@ export interface FeatureImportance {
   explanation: string;
 }
 
-
+export function getFeatureImportance(): FeatureImportance[] {
+  return [
+    { feature: 'Temperature', importance: 28, impact: 'positive', explanation: 'Higher temperatures increase water consumption for cooling and hydration' },
+    { feature: 'Day of Week', importance: 18, impact: 'positive', explanation: 'Weekdays show higher commercial and industrial demand' },
+    { feature: 'Rainfall', importance: 15, impact: 'negative', explanation: 'Rainfall reduces irrigation needs and outdoor water usage' },
+    { feature: 'Festival Activity', importance: 12, impact: 'positive', explanation: 'Festivals bring additional population and consumption' },
+    { feature: 'Industrial Index', importance: 11, impact: 'positive', explanation: 'Industrial activity directly correlates with process water needs' },
+    { feature: 'Population Density', importance: 9, impact: 'positive', explanation: 'Higher population requires proportionally more water' },
+    { feature: 'Season', importance: 7, impact: 'positive', explanation: 'Summer months show sustained higher demand patterns' },
+  ];
+}
 
 export function generateAIResponse(query: string, context: {
   stressIndex: number;

@@ -69,7 +69,7 @@ export default function Dashboard() {
      
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Urban Water Intelligence</h1>
+          <h1 className="text-2xl font-bold text-foreground">Aqua-Intel</h1>
           <p className="text-sm text-muted-foreground">
             Mumbai Metropolitan Region • Real-time monitoring & forecasting
           </p>

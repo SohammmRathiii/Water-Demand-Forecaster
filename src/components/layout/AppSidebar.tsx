@@ -6,6 +6,7 @@ import {
   AlertTriangle, 
   Recycle, 
   Bot,
+  Sprout,
   Settings,
   ChevronLeft,
   ChevronRight
@@ -21,13 +22,19 @@ const navigationItems = [
   { title: 'Distribution', icon: Droplets, path: '/distribution' },
   { title: 'Alerts', icon: AlertTriangle, path: '/alerts' },
   { title: 'Recycling', icon: Recycle, path: '/recycling' },
+  { title: 'Farmer Impact', icon: Sprout, path: '/farmer-impact' },
   { title: 'AI Agent', icon: Bot, path: '/agent' },
 ];
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
-  
+  return (
+    <aside 
+      className={cn(
+        "fixed left-0 top-0 z-40 h-screen border-r border-border/50 bg-sidebar transition-all duration-300",
+        collapsed ? "w-16" : "w-64"
+      )}
     >
       {/* Header */}
       <div className={cn(

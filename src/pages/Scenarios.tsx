@@ -84,7 +84,6 @@ export default function Scenarios() {
     setSelectedScenarios(prev => 
       prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
     );
-    // Initialize default params
     if (!paramValues[id]) {
       const config = scenarioConfigs.find(s => s.id === id);
       if (config) {

@@ -31,16 +31,19 @@ export function ZoneStatusTable({ zones, allocations }: ZoneStatusTableProps) {
             <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Population</th>
             <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Demand Range</th>
             {allocations && (
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Allocation</th>
+              <>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Allocation</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+              </>
             )}
           </tr>
         </thead>
         <tbody className="divide-y divide-border/30">
           {zones.map((zone) => {
             const allocation = allocations?.find(a => a.zoneId === zone.id);
-            const allocationPct = allocation 
-              ? Math.round((allocation.allocation / zone.maxDemand) * 100) 
-              : 100;
+            const allocationVal = allocation ? allocation.allocation : zone.maxDemand;
+            const allocationPct = Math.round((allocationVal / zone.maxDemand) * 100);
+            const shortfall = zone.maxDemand - allocationVal;
             
             return (
               <tr key={zone.id} className="hover:bg-muted/20 transition-colors">
@@ -62,28 +65,37 @@ export function ZoneStatusTable({ zones, allocations }: ZoneStatusTableProps) {
                   {zone.population.toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-sm text-muted-foreground">
-                  {zone.minDemand} - {zone.maxDemand} MLD
+                  {zone.maxDemand} MLD
                 </td>
                 {allocations && (
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
-                        <div 
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            allocationPct >= 90 ? 'bg-alert-green' :
-                            allocationPct >= 70 ? 'bg-alert-yellow' :
-                            allocationPct >= 50 ? 'bg-alert-orange' :
-                            'bg-alert-red'
-                          )}
-                          style={{ width: `${allocationPct}%` }}
-                        />
+                  <>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
+                          <div 
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              allocationPct >= 95 ? 'bg-alert-green' :
+                              allocationPct >= 75 ? 'bg-alert-yellow' :
+                              allocationPct >= 50 ? 'bg-alert-orange' :
+                              'bg-alert-red'
+                            )}
+                            style={{ width: `${allocationPct}%` }}
+                          />
+                        </div>
+                        <span className="font-mono text-sm text-foreground">
+                          {allocationVal} MLD
+                        </span>
                       </div>
-                      <span className="font-mono text-sm text-foreground">
-                        {allocation?.allocation || zone.maxDemand} MLD
-                      </span>
-                    </div>
-                  </td>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                       {shortfall > 0.5 ? (
+                         <span className="text-red-500 text-xs font-medium">-{shortfall.toFixed(1)} MLD</span>
+                       ) : (
+                         <span className="text-green-600 text-xs font-medium">Met</span>
+                       )}
+                    </td>
+                  </>
                 )}
               </tr>
             );
