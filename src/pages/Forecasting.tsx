@@ -21,12 +21,12 @@ export default function Forecasting() {
   const minDemand = Math.min(...currentData.map(d => d.demand));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Water Demand Forecasting</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-3xl font-bold text-gradient">Water Demand Forecasting</h1>
+          <p className="text-sm text-muted-foreground mt-2">
             AI-powered predictions using Prophet + LSTM ensemble
           </p>
         </div>
@@ -34,12 +34,12 @@ export default function Forecasting() {
 
       {/* Forecast Toggle */}
       <Tabs value={forecastHorizon} onValueChange={(v) => setForecastHorizon(v as 'short' | 'medium')}>
-        <TabsList className="bg-muted/50">
-          <TabsTrigger value="short" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+        <TabsList className="bg-muted/30 border border-primary/20">
+          <TabsTrigger value="short" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-primary-foreground rounded-lg">
             <Calendar className="mr-2 h-4 w-4" />
             Short-Term (1-7 Days)
           </TabsTrigger>
-          <TabsTrigger value="medium" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+          <TabsTrigger value="medium" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-primary-foreground rounded-lg">
             <TrendingUp className="mr-2 h-4 w-4" />
             Medium-Term (1-6 Months)
           </TabsTrigger>

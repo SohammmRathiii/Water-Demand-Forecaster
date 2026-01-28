@@ -65,18 +65,18 @@ export default function Dashboard() {
   const currentAlert = alertConfig[stressResult.alertLevel];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
      
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Aqua-Intel</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-4xl font-bold text-gradient">Aqua-Intel</h1>
+          <p className="text-sm text-muted-foreground mt-2">
             Mumbai Metropolitan Region • Real-time monitoring & forecasting
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-xs text-muted-foreground">Last updated</p>
-          <p className="font-mono text-sm text-foreground">
+        <div className="text-right bg-card/50 border border-primary/25 rounded-lg p-4 backdrop-blur-sm">
+          <p className="text-xs text-muted-foreground font-semibold uppercase">Last updated</p>
+          <p className="font-mono text-sm text-accent mt-1">
             {new Date().toLocaleString('en-IN', { 
               hour: '2-digit', 
               minute: '2-digit',
@@ -95,7 +95,7 @@ export default function Dashboard() {
         actions={currentAlert.actions}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Current Demand"
           value={forecastedDemand}
@@ -129,7 +129,7 @@ export default function Dashboard() {
       </div>
 
       
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-7 lg:grid-cols-3">
        
         <div className="panel">
           <div className="panel-header">

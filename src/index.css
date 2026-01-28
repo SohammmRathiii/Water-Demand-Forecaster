@@ -6,72 +6,101 @@
 
 @layer base {
   :root {
-    --background: 222 47% 6%;
+    /* Deep Water Background - Dark blues with water depth gradient */
+    --background: 198 50% 8%;
     --foreground: 210 40% 98%;
 
-    --card: 222 47% 8%;
+    /* Card backgrounds with slight water transparency effect */
+    --card: 196 45% 11%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222 47% 10%;
+    --popover: 196 45% 13%;
     --popover-foreground: 210 40% 98%;
-    --primary: 187 85% 43%;
-    --primary-foreground: 222 47% 6%;
-    --secondary: 222 47% 15%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 222 30% 18%;
-    --muted-foreground: 215 20% 55%;
 
-    --accent: 190 90% 50%;
-    --accent-foreground: 222 47% 6%;
+    /* Primary: Bright Cyan/Turquoise - Water highlight */
+    --primary: 180 100% 50%;
+    --primary-foreground: 198 50% 8%;
+
+    /* Secondary: Deep Ocean Blue */
+    --secondary: 200 50% 18%;
+    --secondary-foreground: 210 40% 98%;
+
+    /* Muted: Subtle blue-gray */
+    --muted: 200 40% 20%;
+    --muted-foreground: 210 30% 55%;
+
+    /* Accent: Aqua/Light Cyan - Water drops */
+    --accent: 185 100% 55%;
+    --accent-foreground: 198 50% 8%;
+
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
 
-    --success: 142 76% 36%;
+    /* Success: Water abundance - Green-blue */
+    --success: 150 80% 40%;
     --success-foreground: 210 40% 98%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 6%;
+    --warning-foreground: 198 50% 8%;
 
-    --info: 199 89% 48%;
-    --info-foreground: 222 47% 6%;
-    --alert-green: 142 76% 36%;
+    /* Info: Light blue water */
+    --info: 200 100% 55%;
+    --info-foreground: 198 50% 8%;
+
+    /* Alert colors */
+    --alert-green: 150 80% 40%;
     --alert-yellow: 45 93% 47%;
     --alert-orange: 25 95% 53%;
     --alert-red: 0 84% 60%;
-    --stress-low: 187 85% 43%;
+
+    /* Stress levels - Water safety gradient */
+    --stress-low: 180 100% 50%;
     --stress-medium: 45 93% 47%;
     --stress-high: 25 95% 53%;
     --stress-critical: 0 84% 60%;
-    --border: 222 30% 20%;
-    --input: 222 30% 15%;
-    --ring: 187 85% 43%;
+
+    /* Borders and inputs */
+    --border: 200 40% 18%;
+    --input: 198 40% 14%;
+    --ring: 180 100% 50%;
     --radius: 0.75rem;
-    --chart-1: 187 85% 43%;
-    --chart-2: 199 89% 48%;
-    --chart-3: 142 76% 36%;
+
+    /* Chart colors - Water themed */
+    --chart-1: 180 100% 50%;
+    --chart-2: 200 100% 55%;
+    --chart-3: 150 80% 40%;
     --chart-4: 45 93% 47%;
-    --chart-5: 280 65% 60%;
+    --chart-5: 270 70% 55%;
     --chart-demand: 0 84% 60%;
-    --chart-supply: 142 76% 36%;
-    --chart-forecast: 187 85% 43%;
-    --sidebar-background: 222 47% 5%;
+    --chart-supply: 150 80% 40%;
+    --chart-forecast: 200 100% 55%;
+
+    /* Sidebar */
+    --sidebar-background: 198 50% 7%;
     --sidebar-foreground: 210 40% 85%;
-    --sidebar-primary: 187 85% 43%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 222 47% 12%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 198 50% 8%;
+    --sidebar-accent: 200 45% 15%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 30% 15%;
-    --sidebar-ring: 187 85% 43%;
-    --gradient-primary: linear-gradient(135deg, hsl(187 85% 43%), hsl(199 89% 48%));
-    --gradient-water: linear-gradient(180deg, hsl(222 47% 8%), hsl(222 47% 4%));
-    --gradient-card: linear-gradient(145deg, hsl(222 47% 10%), hsl(222 47% 7%));
-    --gradient-stress-safe: linear-gradient(90deg, hsl(142 76% 36%), hsl(187 85% 43%));
+    --sidebar-border: 200 40% 16%;
+    --sidebar-ring: 180 100% 50%;
+
+    /* Water-themed gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(180 100% 50%), hsl(200 100% 55%));
+    --gradient-water: linear-gradient(180deg, hsl(198 50% 10%), hsl(196 45% 7%));
+    --gradient-water-light: linear-gradient(180deg, hsl(198 50% 12%), hsl(198 50% 8%));
+    --gradient-card: linear-gradient(135deg, hsl(196 45% 14%), hsl(200 50% 10%));
+    --gradient-card-hover: linear-gradient(135deg, hsl(196 45% 16%), hsl(200 50% 12%));
+    --gradient-stress-safe: linear-gradient(90deg, hsl(150 80% 40%), hsl(180 100% 50%));
     --gradient-stress-warning: linear-gradient(90deg, hsl(45 93% 47%), hsl(25 95% 53%));
     --gradient-stress-critical: linear-gradient(90deg, hsl(25 95% 53%), hsl(0 84% 60%));
-    --shadow-sm: 0 1px 2px 0 hsl(222 47% 3% / 0.5);
-    --shadow-md: 0 4px 6px -1px hsl(222 47% 3% / 0.5), 0 2px 4px -2px hsl(222 47% 3% / 0.5);
-    --shadow-lg: 0 10px 15px -3px hsl(222 47% 3% / 0.5), 0 4px 6px -4px hsl(222 47% 3% / 0.5);
-    --shadow-glow: 0 0 20px hsl(187 85% 43% / 0.3);
+
+    /* Enhanced shadows with water depth */
+    --shadow-sm: 0 1px 2px 0 hsl(198 50% 4% / 0.6);
+    --shadow-md: 0 4px 8px -1px hsl(198 50% 4% / 0.6), 0 2px 4px -2px hsl(198 50% 4% / 0.5);
+    --shadow-lg: 0 12px 20px -3px hsl(198 50% 4% / 0.6), 0 4px 6px -4px hsl(198 50% 4% / 0.5);
+    --shadow-glow: 0 0 20px hsl(180 100% 50% / 0.4);
+    --shadow-glow-accent: 0 0 25px hsl(200 100% 55% / 0.35);
   }
 }
 
@@ -108,40 +137,52 @@
 }
 
 @layer components {
+  /* Enhanced Card Styling */
   .metric-card {
-    @apply relative overflow-hidden rounded-xl border border-border/50 bg-card p-6;
+    @apply relative overflow-hidden rounded-xl border border-primary/30 bg-card/60 p-6 backdrop-blur-sm transition-all duration-300 hover:border-primary/50 hover:shadow-lg;
     background: var(--gradient-card);
   }
 
   .metric-card::before {
     content: '';
     @apply absolute inset-0 opacity-5;
-    background: radial-gradient(ellipse at top right, hsl(var(--primary)), transparent 50%);
+    background: radial-gradient(ellipse at top right, hsl(180 100% 50%), transparent 50%);
   }
+
+  .metric-card:hover {
+    background: var(--gradient-card-hover);
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Status Colors */
   .status-green { @apply text-[hsl(var(--alert-green))]; }
   .status-yellow { @apply text-[hsl(var(--alert-yellow))]; }
   .status-orange { @apply text-[hsl(var(--alert-orange))]; }
   .status-red { @apply text-[hsl(var(--alert-red))]; }
 
-  .status-bg-green { @apply bg-[hsl(var(--alert-green))]/20 border-[hsl(var(--alert-green))]/30; }
-  .status-bg-yellow { @apply bg-[hsl(var(--alert-yellow))]/20 border-[hsl(var(--alert-yellow))]/30; }
-  .status-bg-orange { @apply bg-[hsl(var(--alert-orange))]/20 border-[hsl(var(--alert-orange))]/30; }
-  .status-bg-red { @apply bg-[hsl(var(--alert-red))]/20 border-[hsl(var(--alert-red))]/30; }
+  .status-bg-green { @apply bg-[hsl(var(--alert-green))]/20 border-[hsl(var(--alert-green))]/40 border; }
+  .status-bg-yellow { @apply bg-[hsl(var(--alert-yellow))]/20 border-[hsl(var(--alert-yellow))]/40 border; }
+  .status-bg-orange { @apply bg-[hsl(var(--alert-orange))]/20 border-[hsl(var(--alert-orange))]/40 border; }
+  .status-bg-red { @apply bg-[hsl(var(--alert-red))]/20 border-[hsl(var(--alert-red))]/40 border; }
+
+  /* Glow Effects */
   .glow-primary {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.4);
+    box-shadow: 0 0 25px hsl(var(--primary) / 0.4);
   }
 
   .glow-success {
-    box-shadow: 0 0 20px hsl(var(--success) / 0.4);
+    box-shadow: 0 0 25px hsl(var(--success) / 0.4);
   }
 
   .glow-warning {
-    box-shadow: 0 0 20px hsl(var(--warning) / 0.4);
+    box-shadow: 0 0 25px hsl(var(--warning) / 0.4);
   }
 
   .glow-destructive {
-    box-shadow: 0 0 20px hsl(var(--destructive) / 0.4);
+    box-shadow: 0 0 25px hsl(var(--destructive) / 0.4);
   }
+
+  /* Data Typography */
   .data-value {
     @apply font-mono text-2xl font-bold tracking-tight;
     font-family: 'JetBrains Mono', monospace;
@@ -150,59 +191,89 @@
   .data-label {
     @apply text-xs uppercase tracking-widest text-muted-foreground;
   }
+
+  /* Progress Bar */
   .progress-bar {
-    @apply h-2 rounded-full bg-muted overflow-hidden;
+    @apply h-2 rounded-full bg-muted overflow-hidden border border-primary/20;
   }
 
   .progress-fill {
     @apply h-full rounded-full transition-all duration-500;
+    background: var(--gradient-primary);
   }
+
+  /* Water Background */
   .wave-bg {
     background: 
-      radial-gradient(ellipse at 20% 80%, hsl(187 85% 43% / 0.08) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 20%, hsl(199 89% 48% / 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 20% 80%, hsl(180 100% 50% / 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, hsl(200 100% 55% / 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, hsl(196 45% 12% / 0.3) 0%, transparent 70%),
       var(--gradient-water);
+    position: relative;
   }
+
+  .wave-bg::before {
+    content: '';
+    @apply absolute inset-0 opacity-20 pointer-events-none;
+    background: 
+      radial-gradient(circle at 25% 25%, hsl(180 100% 50% / 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 75% 75%, hsl(200 100% 55% / 0.1) 0%, transparent 40%);
+  }
+
+  /* Panel Component */
   .panel {
-    @apply rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm;
+    @apply rounded-xl border border-primary/25 bg-card/50 backdrop-blur-sm transition-all duration-300 hover:border-primary/40;
+    box-shadow: var(--shadow-md);
+  }
+
+  .panel:hover {
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-lg);
   }
 
   .panel-header {
-    @apply flex items-center justify-between border-b border-border/50 px-6 py-4;
+    @apply flex items-center justify-between border-b border-primary/20 px-6 py-4;
   }
 
   .panel-title {
-    @apply text-sm font-semibold uppercase tracking-wider text-muted-foreground;
+    @apply text-sm font-semibold uppercase tracking-wider text-primary/90;
   }
 
   .panel-body {
     @apply p-6;
   }
 
+  /* Stat Grid */
   .stat-grid {
     @apply grid gap-4;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
 
+  /* Chart Container */
   .chart-container {
     @apply w-full h-64 md:h-80;
   }
 
+  /* Chat Bubbles */
   .chat-bubble-user {
     @apply ml-auto max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-primary-foreground;
+    box-shadow: var(--shadow-md);
   }
 
   .chat-bubble-ai {
-    @apply mr-auto max-w-[80%] rounded-2xl rounded-bl-md bg-secondary px-4 py-3;
+    @apply mr-auto max-w-[80%] rounded-2xl rounded-bl-md bg-secondary px-4 py-3 text-foreground;
+    box-shadow: var(--shadow-md);
   }
 }
 
 @layer utilities {
+  /* Text Gradient */
   .text-gradient {
     @apply bg-clip-text text-transparent;
     background-image: var(--gradient-primary);
   }
 
+  /* Animation Utilities */
   .animate-pulse-slow {
     animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
@@ -211,8 +282,54 @@
     animation: float 6s ease-in-out infinite;
   }
 
+  .animate-water-shimmer {
+    animation: water-shimmer 4s ease-in-out infinite;
+  }
+
+  .animate-water-wave {
+    animation: water-wave 3s ease-in-out infinite;
+  }
+
+  /* Keyframe Animations */
   @keyframes float {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-10px); }
   }
+
+  @keyframes water-shimmer {
+    0%, 100% { 
+      opacity: 1;
+      transform: translateX(0) translateY(0);
+    }
+    50% { 
+      opacity: 0.8;
+      transform: translateX(2px) translateY(-2px);
+    }
+  }
+
+  @keyframes water-wave {
+    0%, 100% { 
+      transform: translateY(0);
+      filter: brightness(1);
+    }
+    25% { 
+      transform: translateY(-3px);
+      filter: brightness(1.05);
+    }
+    50% { 
+      transform: translateY(0);
+      filter: brightness(1);
+    }
+    75% { 
+      transform: translateY(3px);
+      filter: brightness(0.95);
+    }
+  }
+
+  /* Responsive Typography */
+  .text-sm { @apply text-[0.875rem]; }
+  .text-base { @apply text-[1rem]; }
+  .text-lg { @apply text-[1.125rem]; }
+  .text-xl { @apply text-[1.25rem]; }
+  .text-2xl { @apply text-[1.5rem]; }
 }

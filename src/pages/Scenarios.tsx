@@ -155,16 +155,16 @@ export default function Scenarios() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Scenario Simulator</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-3xl font-bold text-gradient">Scenario Simulator</h1>
+          <p className="text-sm text-muted-foreground mt-2">
             "What-If" analysis for water demand planning
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <Button variant="outline" onClick={resetAll} disabled={selectedScenarios.length === 0}>
             <RotateCcw className="mr-2 h-4 w-4" />
             Reset
@@ -195,22 +195,22 @@ export default function Scenarios() {
                   <div
                     key={scenario.id}
                     className={cn(
-                      "rounded-lg border p-4 transition-all cursor-pointer",
+                      "rounded-lg border p-4 transition-all duration-300 cursor-pointer backdrop-blur-sm",
                       isSelected 
-                        ? "border-primary bg-primary/5" 
-                        : "border-border/50 hover:border-border"
+                        ? "border-primary/50 bg-gradient-to-br from-primary/15 to-accent/10 shadow-lg shadow-primary/20" 
+                        : "border-primary/15 bg-card/40 hover:border-primary/30 hover:bg-card/50"
                     )}
                     onClick={() => toggleScenario(scenario.id)}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-lg",
-                        isSelected ? "bg-primary/20" : "bg-muted"
+                        "flex h-11 w-11 items-center justify-center rounded-lg border transition-all",
+                        isSelected ? "bg-gradient-to-br from-primary to-accent border-primary/50" : "bg-primary/10 border-primary/20"
                       )}>
-                        <scenario.icon className={cn("h-5 w-5", scenario.color)} />
+                        <scenario.icon className={cn("h-5 w-5", isSelected ? "text-primary-foreground" : scenario.color)} />
                       </div>
                       <div>
-                        <p className="font-medium text-foreground">{scenario.name}</p>
+                        <p className="font-semibold text-foreground">{scenario.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {scenario.params.map(p => p.label).join(' • ')}
                         </p>
@@ -218,12 +218,12 @@ export default function Scenarios() {
                     </div>
                     
                     {isSelected && (
-                      <div className="space-y-4 mt-4 pt-4 border-t border-border/50" onClick={e => e.stopPropagation()}>
+                      <div className="space-y-4 mt-4 pt-4 border-t border-primary/20" onClick={e => e.stopPropagation()}>
                         {scenario.params.map((param) => (
                           <div key={param.key} className="space-y-2">
                             <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">{param.label}</span>
-                              <span className="font-mono text-foreground">
+                              <span className="font-medium text-muted-foreground">{param.label}</span>
+                              <span className="font-mono text-accent font-semibold">
                                 {params[param.key] ?? param.default}{param.unit}
                               </span>
                             </div>

@@ -28,56 +28,58 @@ export default function Distribution() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Mumbai Zone-wise Water Distribution</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-3xl font-bold text-gradient">Mumbai Zone-wise Water Distribution</h1>
+          <p className="text-sm text-muted-foreground mt-2">
             Priority-based allocation & Reservoir Management
           </p>
         </div>
       </div>
 
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Waves className="h-5 w-5 text-blue-500" />
+            <CardTitle className="flex items-center gap-3 text-2xl">
+              <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-gradient-to-br from-primary to-accent">
+                <Waves className="h-5 w-5 text-primary-foreground" />
+              </div>
               Reservoir Status Panel
             </CardTitle>
-            <Badge variant={recommendation.storageHealth === 'critical' ? 'destructive' : recommendation.storageHealth === 'healthy' ? 'default' : 'secondary'} className="uppercase">
+            <Badge variant={recommendation.storageHealth === 'critical' ? 'destructive' : recommendation.storageHealth === 'healthy' ? 'default' : 'secondary'} className="uppercase font-bold">
               {recommendation.storageHealth} Levels
             </Badge>
           </div>
-          <CardDescription>Real-time storage & flow monitoring</CardDescription>
+          <CardDescription className="mt-2">Real-time storage & flow monitoring</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 md:grid-cols-4 mb-6">
-            <div className="space-y-1">
-              <span className="text-sm text-muted-foreground">Current Storage</span>
-              <div className="text-2xl font-bold text-blue-500">
+          <div className="grid gap-6 md:grid-cols-4 mb-8">
+            <div className="space-y-2 bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Current Storage</span>
+              <div className="text-3xl font-bold text-accent">
                 {currentStorage} <span className="text-sm font-normal text-muted-foreground">MLD</span>
               </div>
               <div className="text-xs text-muted-foreground">
                 of {reservoirCapacity} MLD Capacity
               </div>
             </div>
-            <div className="space-y-1">
-              <span className="text-sm text-muted-foreground">Daily Outflow</span>
-              <div className="text-2xl font-bold text-foreground">
+            <div className="space-y-2 bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Daily Outflow</span>
+              <div className="text-3xl font-bold text-foreground">
                 {dailyOutflow} <span className="text-sm font-normal text-muted-foreground">MLD</span>
               </div>
               <div className="text-xs text-muted-foreground">
                 Released for city
               </div>
             </div>
-            <div className="space-y-1">
-              <span className="text-sm text-muted-foreground">Net Flow</span>
-              <div className={cn("text-2xl font-bold flex items-center gap-1", netFlow >= 0 ? "text-green-500" : "text-red-500")}>
-                {netFlow > 0 ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+            <div className="space-y-2 bg-primary/5 rounded-lg p-4 border border-primary/20">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Net Flow</span>
+              <div className={cn("text-3xl font-bold flex items-center gap-1", netFlow >= 0 ? "text-alert-green" : "text-alert-red")}>
+                {netFlow > 0 ? <ArrowUp className="h-5 w-5" /> : <ArrowDown className="h-5 w-5" />}
                 {Math.abs(netFlow).toFixed(1)} <span className="text-sm font-normal text-muted-foreground">MLD</span>
               </div>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2 bg-primary/5 rounded-lg p-4 border border-primary/20">
               <span className="text-sm text-muted-foreground">Days Remaining</span>
               <div className="text-2xl font-bold text-foreground">
                 {recommendation.daysToEmpty > 365 ? '> 1 Year' : Math.round(recommendation.daysToEmpty)}
